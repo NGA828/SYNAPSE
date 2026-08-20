@@ -88,6 +88,22 @@ export const db = {
     { id: 2, school_id: 2, name: '2026/2027', start_date: '2026-09-01', end_date: '2027-06-30', is_current: true },
     { id: 3, school_id: 3, name: '2026/2027', start_date: '2026-09-01', end_date: '2027-06-30', is_current: true },
   ],
+  semesters: [
+    { id: 1, school_id: 2, academic_year_id: 2, name: 'Semester 1', sequence: 1, start_date: '2026-09-01', end_date: '2027-01-31', is_current: true },
+    { id: 2, school_id: 2, academic_year_id: 2, name: 'Semester 2', sequence: 2, start_date: '2027-02-01', end_date: '2027-06-30', is_current: false },
+  ],
+  gradeComponents: [
+    { id: 1, school_id: 2, subject_id: null, name: 'Assignments', weight: 30, sequence: 1 },
+    { id: 2, school_id: 2, subject_id: null, name: 'Quizzes', weight: 20, sequence: 2 },
+    { id: 3, school_id: 2, subject_id: null, name: 'Midterm', weight: 20, sequence: 3 },
+    { id: 4, school_id: 2, subject_id: null, name: 'Exam', weight: 30, sequence: 4 },
+  ],
+  gradeScores: [
+    { id: 1, school_id: 2, grade_id: 1, component_id: 1, score: 16 },
+    { id: 2, school_id: 2, grade_id: 1, component_id: 2, score: 15 },
+    { id: 3, school_id: 2, grade_id: 1, component_id: 3, score: 16 },
+    { id: 4, school_id: 2, grade_id: 1, component_id: 4, score: 17 },
+  ],
   enrollments: [
     { id: 1, school_id: 2, student_id: 1, class_id: 3, academic_year_id: 1 },
     { id: 2, school_id: 2, student_id: 1, class_id: 5, academic_year_id: 2 },
@@ -107,13 +123,13 @@ export const db = {
     { id: 9, school_id: 3, teacher_id: 4, subject_id: 9, class_id: 6, academic_year_id: 3 },
   ],
   grades: [
-    { id: 1, school_id: 2, student_id: 1, subject_id: 1, class_id: 5, academic_year_id: 2, teacher_id: 1, test1: 15, test2: 16, exam: 17 },
-    { id: 2, school_id: 2, student_id: 1, subject_id: 2, class_id: 5, academic_year_id: 2, teacher_id: 2, test1: 14, test2: 16, exam: 16 },
-    { id: 3, school_id: 2, student_id: 1, subject_id: 5, class_id: 5, academic_year_id: 2, teacher_id: 3, test1: 16, test2: 17, exam: 18 },
-    { id: 4, school_id: 2, student_id: 1, subject_id: 6, class_id: 5, academic_year_id: 2, teacher_id: 3, test1: 13, test2: 15, exam: 15 },
-    { id: 5, school_id: 2, student_id: 2, subject_id: 1, class_id: 5, academic_year_id: 2, teacher_id: 1, test1: 14, test2: 15, exam: 16 },
-    { id: 6, school_id: 2, student_id: 3, subject_id: 1, class_id: 5, academic_year_id: 2, teacher_id: 1, test1: 12, test2: 14, exam: 15 },
-    { id: 7, school_id: 3, student_id: 4, subject_id: 9, class_id: 6, academic_year_id: 3, teacher_id: 4, test1: 16, test2: 17, exam: 18 },
+    { id: 1, school_id: 2, student_id: 1, subject_id: 1, class_id: 5, academic_year_id: 2, semester_id: 1, teacher_id: 1, test1: 15, test2: 16, exam: 17 },
+    { id: 2, school_id: 2, student_id: 1, subject_id: 2, class_id: 5, academic_year_id: 2, semester_id: 1, teacher_id: 2, test1: 14, test2: 16, exam: 16 },
+    { id: 3, school_id: 2, student_id: 1, subject_id: 5, class_id: 5, academic_year_id: 2, semester_id: 1, teacher_id: 3, test1: 16, test2: 17, exam: 18 },
+    { id: 4, school_id: 2, student_id: 1, subject_id: 6, class_id: 5, academic_year_id: 2, semester_id: 1, teacher_id: 3, test1: 13, test2: 15, exam: 15 },
+    { id: 5, school_id: 2, student_id: 2, subject_id: 1, class_id: 5, academic_year_id: 2, semester_id: 1, teacher_id: 1, test1: 14, test2: 15, exam: 16 },
+    { id: 6, school_id: 2, student_id: 3, subject_id: 1, class_id: 5, academic_year_id: 2, semester_id: 1, teacher_id: 1, test1: 12, test2: 14, exam: 15 },
+    { id: 7, school_id: 3, student_id: 4, subject_id: 9, class_id: 6, academic_year_id: 3, semester_id: null, teacher_id: 4, test1: 16, test2: 17, exam: 18 },
   ],
   timetableEntries: [
     { id: 1, school_id: 2, class_id: 5, academic_year_id: 2, subject_id: 1, day: 1, start: '08:00', end: '10:00' },
@@ -125,6 +141,11 @@ export const db = {
     { id: 7, school_id: 2, class_id: 5, academic_year_id: 2, subject_id: 2, day: 3, start: '08:00', end: '10:00' },
     { id: 8, school_id: 2, class_id: 5, academic_year_id: 2, subject_id: 8, day: 3, start: '10:00', end: '12:00' },
     { id: 9, school_id: 2, class_id: 5, academic_year_id: 2, subject_id: 1, day: 3, start: '14:00', end: '16:00' },
+  ],
+  exams: [
+    { id: 1, school_id: 2, academic_year_id: 2, semester_id: 1, subject_id: 1, class_id: 5, date: '2026-09-14', start: '08:00', end: '10:00', room: 'Hall A' },
+    { id: 2, school_id: 2, academic_year_id: 2, semester_id: 1, subject_id: 2, class_id: 5, date: '2026-09-15', start: '08:00', end: '10:00', room: 'Hall A' },
+    { id: 3, school_id: 2, academic_year_id: 2, semester_id: 1, subject_id: 5, class_id: 5, date: '2026-09-16', start: '10:00', end: '12:00', room: 'Lab 2' },
   ],
   requests: [
     { id: 1, school_id: 2, student_id: 1, reference: 'REQ-1045', type: 'Certificate of Enrollment', reason: 'University application', status: 'submitted', admin_note: null, created_at: '2026-08-19T10:00:00' },
@@ -209,6 +230,59 @@ export const averageOf = (grade) => {
   return Math.round((scores.reduce((sum, value) => sum + value, 0) / scores.length) * 100) / 100
 }
 
+/**
+ * Weighted average from component scores (falls back to legacy mean).
+ */
+export const weightedAverageOf = (grade) => {
+  const componentRows = db.gradeScores.filter((score) => score.grade_id === grade.id && score.score != null)
+  if (componentRows.length > 0) {
+    const weighted = componentRows.map((row) => {
+      const component = byId(db.gradeComponents, row.component_id)
+      return { score: row.score, weight: component?.weight ?? 0 }
+    })
+    const totalWeight = weighted.reduce((sum, row) => sum + row.weight, 0)
+    if (totalWeight > 0) {
+      const numerator = weighted.reduce((sum, row) => sum + row.score * row.weight, 0)
+      return Math.round((numerator / totalWeight) * 100) / 100
+    }
+  }
+  return averageOf(grade)
+}
+
+/**
+ * Effective grade components for a subject (subject-specific first, then
+ * school defaults).
+ */
+export const effectiveComponents = (schoolId, subjectId) => {
+  const subjectSpecific = db.gradeComponents.filter(
+    (component) => component.school_id === Number(schoolId) && component.subject_id === Number(subjectId),
+  )
+  if (subjectSpecific.length > 0) return subjectSpecific
+  return db.gradeComponents.filter(
+    (component) => component.school_id === Number(schoolId) && component.subject_id == null,
+  )
+}
+
+export const semestersFor = (schoolId, yearId) =>
+  db.semesters
+    .filter((semester) => semester.school_id === Number(schoolId) && semester.academic_year_id === Number(yearId))
+    .sort((a, b) => a.sequence - b.sequence)
+
+export const currentSemesterFor = (schoolId, yearId) =>
+  semestersFor(schoolId, yearId).find((semester) => semester.is_current) ?? semestersFor(schoolId, yearId)[0]
+
+export const serializeExam = (exam) => ({
+  id: exam.id,
+  subject: byId(db.subjects, exam.subject_id),
+  class: byId(db.classes, exam.class_id),
+  semester: byId(db.semesters, exam.semester_id),
+  academic_year: byId(db.academicYears, exam.academic_year_id),
+  date: exam.date,
+  start: exam.start,
+  end: exam.end,
+  room: exam.room,
+})
+
 export const classOfStudent = (studentId, schoolId) => {
   const year = currentYearFor(schoolId)
   const enrollment = db.enrollments.find(
@@ -222,10 +296,17 @@ export const serializeGrade = (grade) => {
   return {
     subject: subject?.name,
     subject_code: subject?.code,
+    semester_id: grade.semester_id ?? null,
     test1: grade.test1,
     test2: grade.test2,
     exam: grade.exam,
-    average: averageOf(grade),
+    components: db.gradeScores
+      .filter((score) => score.grade_id === grade.id)
+      .map((score) => {
+        const component = byId(db.gradeComponents, score.component_id)
+        return { name: component?.name, weight: component?.weight, score: score.score }
+      }),
+    average: weightedAverageOf(grade),
   }
 }
 

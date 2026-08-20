@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
 use App\Models\AcademicYear;
+use App\Models\Semester;
 use App\Models\Student;
+use App\Services\ExamService;
 use App\Services\GradeService;
 use App\Services\TimetableService;
+use App\Services\TranscriptService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,33 +18,41 @@ class AcademicController extends Controller
     public function __construct(
         private readonly GradeService $gradeService,
         private readonly TimetableService $timetableService,
+        private readonly TranscriptService $transcriptService,
+        private readonly ExamService $examService,
     ) {}
 
     /**
-     * The authenticated student's subject grades.
+     * The authenticated student's subject grades (optionally per semester).
      */
     public function grades(Request $request): JsonResponse
     {
         $student = $this->student($request);
+        $semester = $this->semester($request);
 
-        $result = $this->gradeService->studentGrades($student);
+        $result = $this->gradeService->studentGrades($student, null, $semester);
 
         return response()->json([
             'class' => $result['class'],
             'academic_year' => AcademicYear::current(),
+            'semester' => $semester,
+            'semesters' => $this->gradeService->semesters(),
             'grades' => $result['grades'],
             'average' => $result['average'],
         ]);
     }
 
     /**
-     * A printable report card with class rank.
+     * A printable report card with class rank (optionally per semester).
      */
     public function reportCard(Request $request): JsonResponse
     {
         $student = $this->student($request);
+        $semester = $this->semester($request);
 
-        return response()->json($this->gradeService->reportCard($student));
+        return response()->json(
+            $this->gradeService->reportCard($student, null, $semester),
+        );
     }
 
     /**
@@ -63,6 +74,32 @@ class AcademicController extends Controller
         ]);
     }
 
+    /**
+     * Multi-year academic history (transcript).
+     */
+    public function transcript(Request $request): JsonResponse
+    {
+        $student = $this->student($request);
+
+        return response()->json($this->transcriptService->forStudent($student));
+    }
+
+    /**
+     * Exam timetable for the student's current class.
+     */
+    public function exams(Request $request): JsonResponse
+    {
+        $student = $this->student($request);
+
+        return response()->json([
+            'class' => $student->enrollments()
+                ->where('academic_year_id', AcademicYear::current()?->id)
+                ->first()?->schoolClass,
+            'academic_year' => AcademicYear::current(),
+            'exams' => $this->examService->forStudent($student),
+        ]);
+    }
+
     private function student(Request $request): Student
     {
         $student = $request->user()->student;
@@ -74,5 +111,16 @@ class AcademicController extends Controller
         );
 
         return $student;
+    }
+
+    private function semester(Request $request): ?Semester
+    {
+        $id = $request->query('semester_id');
+
+        if (! $id) {
+            return null;
+        }
+
+        return Semester::query()->findOrFail((int) $id);
     }
 }

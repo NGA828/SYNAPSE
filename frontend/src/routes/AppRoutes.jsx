@@ -11,6 +11,8 @@ import StudentTimetablePage from '../pages/student/TimetablePage.jsx'
 import StudentRequestsPage from '../pages/student/RequestsPage.jsx'
 import StudentDocumentsPage from '../pages/student/DocumentsPage.jsx'
 import StudentAttendancePage from '../pages/student/AttendancePage.jsx'
+import StudentTranscriptPage from '../pages/student/TranscriptPage.jsx'
+import StudentExamsPage from '../pages/student/ExamsPage.jsx'
 import AnnouncementsPage from '../pages/AnnouncementsPage.jsx'
 import TeacherDashboardPage from '../pages/teacher/DashboardPage.jsx'
 import TeacherAssignmentsPage from '../pages/teacher/AssignmentsPage.jsx'
@@ -18,12 +20,15 @@ import TeacherClassPage from '../pages/teacher/ClassPage.jsx'
 import TeacherGradeEntryPage from '../pages/teacher/GradeEntryPage.jsx'
 import TeacherGradebookPage from '../pages/teacher/GradebookPage.jsx'
 import TeacherAttendancePage from '../pages/teacher/AttendancePage.jsx'
+import TeacherExamsPage from '../pages/teacher/ExamsPage.jsx'
 import AdminDashboardPage from '../pages/admin/DashboardPage.jsx'
 import AdminStructurePage from '../pages/admin/StructurePage.jsx'
 import AdminStudentsPage from '../pages/admin/StudentsPage.jsx'
 import AdminTeachersPage from '../pages/admin/TeachersPage.jsx'
 import AdminTimetablePage from '../pages/admin/TimetablePage.jsx'
 import AdminAttendancePage from '../pages/admin/AttendancePage.jsx'
+import AdminExamsPage from '../pages/admin/ExamsPage.jsx'
+import AdminImportPage from '../pages/admin/ImportPage.jsx'
 import AdminRequestsPage from '../pages/admin/RequestsPage.jsx'
 import AdminAnnouncementsPage from '../pages/admin/AnnouncementsPage.jsx'
 import AdminBillingPage from '../pages/admin/BillingPage.jsx'
@@ -87,12 +92,15 @@ export default function AppRoutes() {
       <Route path="/student/requests" element={studentRoute(<StudentRequestsPage />)} />
       <Route path="/student/documents" element={studentRoute(<StudentDocumentsPage />)} />
       <Route path="/student/attendance" element={studentRoute(<StudentAttendancePage />)} />
+      <Route path="/student/transcript" element={studentRoute(<StudentTranscriptPage />)} />
+      <Route path="/student/exams" element={studentRoute(<StudentExamsPage />)} />
       <Route path="/student/announcements" element={studentRoute(<AnnouncementsPage />)} />
 
       <Route path="/teacher" element={teacherRoute(<TeacherDashboardPage />)} />
       <Route path="/teacher/assignments" element={teacherRoute(<TeacherAssignmentsPage />)} />
       <Route path="/teacher/grades" element={teacherRoute(<TeacherGradeEntryPage />)} />
       <Route path="/teacher/attendance" element={teacherRoute(<TeacherAttendancePage />)} />
+      <Route path="/teacher/exams" element={teacherRoute(<TeacherExamsPage />)} />
       <Route path="/teacher/announcements" element={teacherRoute(<AnnouncementsPage />)} />
       <Route path="/teacher/classes/:classId/subjects/:subjectId" element={teacherRoute(<TeacherClassPage />)} />
       <Route
@@ -106,6 +114,8 @@ export default function AppRoutes() {
       <Route path="/admin/teachers" element={adminRoute(<AdminTeachersPage />)} />
       <Route path="/admin/timetable" element={adminRoute(<AdminTimetablePage />)} />
       <Route path="/admin/attendance" element={adminRoute(<AdminAttendancePage />)} />
+      <Route path="/admin/exams" element={adminRoute(<AdminExamsPage />)} />
+      <Route path="/admin/import" element={adminRoute(<AdminImportPage />)} />
       <Route path="/admin/requests" element={adminRoute(<AdminRequestsPage />)} />
       <Route path="/admin/announcements" element={adminRoute(<AdminAnnouncementsPage />)} />
       <Route path="/admin/billing" element={adminRoute(<AdminBillingPage />)} />

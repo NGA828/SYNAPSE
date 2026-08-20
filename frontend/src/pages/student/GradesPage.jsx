@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { TrendingUp } from 'lucide-react'
 import { useAsync } from '../../hooks/useAsyncList.js'
 import { getGrades } from '../../services/studentService.js'
@@ -7,13 +8,15 @@ import { GradesTable } from '../../components/dashboard/GradesTable.jsx'
 import { ProgressRing } from '../../components/ui/ProgressRing.jsx'
 import { BarList } from '../../components/ui/BarList.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { SemesterTabs } from '../../components/ui/SemesterTabs.jsx'
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { formatDecimal } from '../../utils/formatters.js'
 import { subjectPalette } from '../../utils/timetable.js'
 
 export default function GradesPage() {
-  const { data, loading, error } = useAsync(getGrades)
+  const [semesterId, setSemesterId] = useState('')
+  const { data, loading, error } = useAsync(() => getGrades(semesterId || undefined), [semesterId])
 
   const grades = data?.grades ?? []
   const average = data?.average ?? null
@@ -34,8 +37,10 @@ export default function GradesPage() {
       <div className="space-y-6">
         <PageHeader
           title="My grades"
-          description={`${data?.class?.name ?? 'Your class'} · ${data?.academic_year?.name ?? ''}`}
+          description={`${data?.class?.name ?? 'Your class'} · ${data?.semester?.name ?? data?.academic_year?.name ?? ''}`}
         />
+
+        <SemesterTabs semesters={data?.semesters} value={semesterId} onChange={setSemesterId} />
 
         {loading ? (
           <div className="flex justify-center py-20">
@@ -54,7 +59,8 @@ export default function GradesPage() {
                     <span className="text-xl font-normal text-brand-200"> / 20</span>
                   </p>
                   <p className="mt-2 text-sm text-brand-100">
-                    {grades.length} subject{grades.length === 1 ? '' : 's'} assessed this term
+                    {grades.length} subject{grades.length === 1 ? '' : 's'} assessed
+                    {data?.semester ? ` in ${data.semester.name}` : ' this year'}
                   </p>
                 </div>
                 <div className="flex flex-col gap-3">

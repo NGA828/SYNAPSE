@@ -4,6 +4,7 @@ import {
   BookMarked,
   BookOpen,
   CalendarCheck2,
+  CalendarClock,
   CalendarDays,
   ClipboardList,
   CreditCard,
@@ -13,6 +14,7 @@ import {
   Megaphone,
   School,
   Settings,
+  Upload,
   Users,
 } from 'lucide-react'
 import { useTenant } from '../../hooks/useTenant.js'
@@ -33,6 +35,8 @@ function useNavForRole(role) {
     { label: 'Requests', icon: ClipboardList, to: '/student/requests' },
     ...(hasDocuments ? [{ label: 'Documents', icon: FileText, to: '/student/documents' }] : []),
     { label: 'Attendance', icon: CalendarCheck2, to: '/student/attendance' },
+    { label: 'Transcript', icon: GraduationCap, to: '/student/transcript' },
+    { label: 'Exams', icon: CalendarClock, to: '/student/exams' },
     { label: 'Announcements', icon: Megaphone, to: '/student/announcements' },
   ]
 
@@ -41,6 +45,7 @@ function useNavForRole(role) {
     { label: 'My Assignments', icon: BookMarked, to: '/teacher/assignments' },
     { label: 'Grade Entry', icon: BookOpen, to: '/teacher/grades' },
     { label: 'Attendance', icon: CalendarCheck2, to: '/teacher/attendance' },
+    { label: 'Exams', icon: CalendarClock, to: '/teacher/exams' },
     { label: 'Announcements', icon: Megaphone, to: '/teacher/announcements' },
   ]
 
@@ -51,6 +56,8 @@ function useNavForRole(role) {
     { label: 'Teachers', icon: GraduationCap, to: '/admin/teachers' },
     { label: 'Timetable', icon: CalendarDays, to: '/admin/timetable' },
     { label: 'Attendance', icon: CalendarCheck2, to: '/admin/attendance' },
+    { label: 'Exams', icon: CalendarClock, to: '/admin/exams' },
+    { label: 'Import', icon: Upload, to: '/admin/import' },
     { label: 'Requests', icon: ClipboardList, to: '/admin/requests' },
     { label: 'Announcements', icon: Megaphone, to: '/admin/announcements' },
     { label: 'Billing', icon: CreditCard, to: '/admin/billing' },

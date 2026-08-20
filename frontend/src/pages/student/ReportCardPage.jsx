@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Printer, Trophy } from 'lucide-react'
 import { useAsync } from '../../hooks/useAsyncList.js'
 import { useTenant } from '../../hooks/useTenant.js'
@@ -6,6 +7,7 @@ import { PageContainer } from '../../components/layout/PageContainer.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { ReportCardTable } from '../../components/dashboard/ReportCardTable.jsx'
 import { ProgressRing } from '../../components/ui/ProgressRing.jsx'
+import { SemesterTabs } from '../../components/ui/SemesterTabs.jsx'
 import { Card, CardBody } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Button } from '../../components/ui/Button.jsx'
@@ -13,7 +15,8 @@ import { Spinner } from '../../components/ui/Spinner.jsx'
 import { formatDate } from '../../utils/formatters.js'
 
 export default function ReportCardPage() {
-  const { data, loading, error } = useAsync(getReportCard)
+  const [semesterId, setSemesterId] = useState('')
+  const { data, loading, error } = useAsync(() => getReportCard(semesterId || undefined), [semesterId])
   const { school } = useTenant()
 
   return (
@@ -21,13 +24,15 @@ export default function ReportCardPage() {
       <div className="space-y-6">
         <PageHeader
           title="Report card"
-          description={`${data?.class?.name ?? 'Your class'} · ${data?.academic_year?.name ?? ''}`}
+          description={`${data?.class?.name ?? 'Your class'} · ${data?.semester?.name ?? data?.academic_year?.name ?? ''}`}
         >
           <Button variant="secondary" onClick={() => window.print()}>
             <Printer className="size-4" aria-hidden="true" />
             Print
           </Button>
         </PageHeader>
+
+        <SemesterTabs semesters={data?.semesters} value={semesterId} onChange={setSemesterId} />
 
         {loading ? (
           <div className="flex justify-center py-20">

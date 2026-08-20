@@ -22,6 +22,9 @@ class StoreGradesRequest extends FormRequest
             'grades.*.test1' => ['nullable', 'numeric', 'min:0', 'max:20'],
             'grades.*.test2' => ['nullable', 'numeric', 'min:0', 'max:20'],
             'grades.*.exam' => ['nullable', 'numeric', 'min:0', 'max:20'],
+            'grades.*.scores' => ['nullable', 'array'],
+            'grades.*.scores.*.component_id' => ['required', 'integer', 'exists:grade_components,id'],
+            'grades.*.scores.*.score' => ['nullable', 'numeric', 'min:0', 'max:20'],
         ];
     }
 }

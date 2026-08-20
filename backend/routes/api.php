@@ -5,8 +5,12 @@ use App\Http\Controllers\Api\Admin\AnnouncementController as AdminAnnouncementCo
 use App\Http\Controllers\Api\Admin\AttendanceController as AdminAttendanceController;
 use App\Http\Controllers\Api\Admin\BillingController;
 use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Api\Admin\ExamController as AdminExamController;
+use App\Http\Controllers\Api\Admin\GradeComponentController as AdminGradeComponentController;
+use App\Http\Controllers\Api\Admin\ImportController as AdminImportController;
 use App\Http\Controllers\Api\Admin\RequestController as AdminRequestController;
 use App\Http\Controllers\Api\Admin\SchoolClassController;
+use App\Http\Controllers\Api\Admin\SemesterController as AdminSemesterController;
 use App\Http\Controllers\Api\Admin\SettingsController;
 use App\Http\Controllers\Api\Admin\StudentController as AdminStudentController;
 use App\Http\Controllers\Api\Admin\SubjectController;
@@ -32,6 +36,7 @@ use App\Http\Controllers\Api\Teacher\AssignmentController;
 use App\Http\Controllers\Api\Teacher\AttendanceController as TeacherAttendanceController;
 use App\Http\Controllers\Api\Teacher\ClassStudentsController;
 use App\Http\Controllers\Api\Teacher\DashboardController as TeacherDashboardController;
+use App\Http\Controllers\Api\Teacher\ExamController as TeacherExamController;
 use App\Http\Controllers\Api\Teacher\GradebookController;
 use App\Http\Controllers\Api\TenantController;
 use Illuminate\Support\Facades\Route;
@@ -90,6 +95,10 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:student', 'subscription'])->g
         ->name('api.student.documents.download');
     Route::get('/student/attendance', [StudentAttendanceController::class, 'index'])
         ->name('api.student.attendance');
+    Route::get('/student/transcript', [StudentAcademicController::class, 'transcript'])
+        ->name('api.student.transcript');
+    Route::get('/student/exams', [StudentAcademicController::class, 'exams'])
+        ->name('api.student.exams');
 });
 
 /*
@@ -122,6 +131,12 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:teacher', 'subscription'])->p
     Route::post('/classes/{schoolClass}/attendance', [TeacherAttendanceController::class, 'store'])
         ->middleware('class.access')
         ->name('api.teacher.class.attendance.store');
+
+    Route::get('/exams', [TeacherExamController::class, 'index'])
+        ->name('api.teacher.exams');
+
+    Route::get('/exams/ranking', [TeacherExamController::class, 'ranking'])
+        ->name('api.teacher.exams.ranking');
 });
 
 /*
@@ -143,6 +158,19 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->gr
         Route::apiResource('academic-years', AcademicYearController::class)->only(['index', 'store']);
         Route::post('/academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate'])
             ->name('api.admin.academic-years.activate');
+
+        Route::apiResource('semesters', AdminSemesterController::class)->only(['index', 'store', 'destroy']);
+        Route::post('/semesters/{semester}/activate', [AdminSemesterController::class, 'activate'])
+            ->name('api.admin.semesters.activate');
+
+        Route::apiResource('grade-components', AdminGradeComponentController::class)->only(['index', 'store', 'update', 'destroy']);
+
+        Route::apiResource('exams', AdminExamController::class)->only(['index', 'store', 'destroy']);
+        Route::get('/exams/ranking', [AdminExamController::class, 'ranking'])
+            ->name('api.admin.exams.ranking');
+
+        Route::post('/import', [AdminImportController::class, 'store'])
+            ->name('api.admin.import');
 
         Route::apiResource('classes', SchoolClassController::class)->only(['index', 'store']);
         Route::apiResource('subjects', SubjectController::class)->only(['index', 'store']);

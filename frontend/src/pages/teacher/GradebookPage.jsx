@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { GradebookForm } from '../../components/teacher/GradebookForm.jsx'
 import { Card, CardBody } from '../../components/ui/Card.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { Select } from '../../components/ui/Select.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { ErrorDisplay } from '../../components/forms/ErrorDisplay.jsx'
 import { subjectPalette } from '../../utils/timetable.js'
@@ -16,7 +17,11 @@ import { formatDecimal } from '../../utils/formatters.js'
 
 export default function GradebookPage() {
   const { classId, subjectId } = useParams()
-  const { data, loading, error, reload } = useAsync(() => getGradebook(classId, subjectId), [classId, subjectId])
+  const [semesterId, setSemesterId] = useState('')
+  const { data, loading, error, reload } = useAsync(
+    () => getGradebook(classId, subjectId, semesterId || undefined),
+    [classId, subjectId, semesterId],
+  )
   const [submitting, setSubmitting] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -24,9 +29,14 @@ export default function GradebookPage() {
   const forbidden = error?.response?.status === 403 || error?.response?.status === 409
   const palette = subjectPalette(data?.subject?.name)
   const students = data?.students ?? []
+  const semesters = data?.semesters ?? []
 
   const graded = students.filter(
-    (student) => student.test1 != null || student.test2 != null || student.exam != null,
+    (student) =>
+      student.test1 != null ||
+      student.test2 != null ||
+      student.exam != null ||
+      Object.values(student.scores ?? {}).some((value) => value != null),
   ).length
   const classAverage = (() => {
     const averages = students.map((student) => student.average).filter((value) => value != null)
@@ -39,7 +49,7 @@ export default function GradebookPage() {
     setSaved(false)
     setSaveError(null)
     try {
-      await saveGrades(classId, subjectId, entries)
+      await saveGrades(classId, subjectId, entries, semesterId || undefined)
       setSaved(true)
       await reload()
     } catch (err) {
@@ -56,7 +66,23 @@ export default function GradebookPage() {
           title="Grade entry"
           description={`${data?.subject?.name ?? 'Subject'} · ${data?.class?.name ?? 'Class'} · ${data?.academic_year?.name ?? ''}`}
           back="/teacher/grades"
-        />
+        >
+          {semesters.length > 0 ? (
+            <Select
+              name="semester"
+              value={semesterId}
+              onChange={(event) => setSemesterId(event.target.value)}
+              className="w-44"
+            >
+              <option value="">All year</option>
+              {semesters.map((semester) => (
+                <option key={semester.id} value={semester.id}>
+                  {semester.name}
+                </option>
+              ))}
+            </Select>
+          ) : null}
+        </PageHeader>
 
         {loading ? (
           <div className="flex justify-center py-20">
@@ -86,9 +112,13 @@ export default function GradebookPage() {
                     {String(data?.subject?.name ?? '').slice(0, 1).toUpperCase()}
                   </span>
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-violet-100">Gradebook</p>
+                    <p className="text-xs uppercase tracking-wide text-violet-100">
+                      {data?.components?.length ? 'Weighted gradebook' : 'Gradebook'}
+                    </p>
                     <p className="text-2xl font-bold">{data?.subject?.name} · {data?.class?.name}</p>
-                    <p className="text-sm text-violet-100">Scores out of 20 · {data?.academic_year?.name}</p>
+                    <p className="text-sm text-violet-100">
+                      {data?.semester?.name ?? 'Full year'} · {data?.academic_year?.name}
+                    </p>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
@@ -119,8 +149,9 @@ export default function GradebookPage() {
             <Card>
               <CardBody>
                 <GradebookForm
-                  key={`${classId}-${subjectId}`}
+                  key={`${classId}-${subjectId}-${semesterId}`}
                   students={students}
+                  components={data?.components ?? []}
                   onSubmit={handleSave}
                   submitting={submitting}
                 />

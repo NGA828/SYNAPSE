@@ -7,24 +7,28 @@
  */
 
 import {
-  averageOf,
   byId,
   classOfStudent,
+  currentSemesterFor,
   currentYearFor,
   db,
+  effectiveComponents,
   getSetting,
   isSchoolActive,
   latestSubscription,
   nextMockId,
   planOf,
   schoolOf,
+  semestersFor,
   serializeDocument,
+  serializeExam,
   serializeGrade,
   serializeTimetableEntry,
   setSetting,
   studentForUser,
   teacherForUser,
   userName,
+  weightedAverageOf,
 } from './mockDb.js'
 
 const tokens = new Map()
@@ -154,10 +158,15 @@ const teacherAssignments = (teacher) => {
     }))
 }
 
-const studentGradesFor = (student) => {
+const studentGradesFor = (student, semesterId) => {
   const year = currentYearFor(student.school_id)
   const rows = db.grades
-    .filter((grade) => grade.student_id === student.id && grade.academic_year_id === year?.id)
+    .filter(
+      (grade) =>
+        grade.student_id === student.id &&
+        grade.academic_year_id === year?.id &&
+        (!semesterId || grade.semester_id === Number(semesterId)),
+    )
     .map(serializeGrade)
   const averages = rows.map((row) => row.average).filter((value) => value !== null)
   const average = averages.length
@@ -166,8 +175,9 @@ const studentGradesFor = (student) => {
   return { rows, average }
 }
 
-const gradebookStudents = (classId, subjectId, schoolId) => {
+const gradebookStudents = (classId, subjectId, schoolId, semesterId) => {
   const year = currentYearFor(schoolId)
+  const components = effectiveComponents(schoolId, subjectId)
   return db.enrollments
     .filter((entry) => entry.class_id === Number(classId) && entry.academic_year_id === year?.id)
     .map((entry) => {
@@ -177,8 +187,16 @@ const gradebookStudents = (classId, subjectId, schoolId) => {
           item.student_id === student.id &&
           item.subject_id === Number(subjectId) &&
           item.class_id === Number(classId) &&
-          item.academic_year_id === year?.id,
+          item.academic_year_id === year?.id &&
+          (!semesterId || item.semester_id === Number(semesterId)),
       )
+      const scores = {}
+      for (const component of components) {
+        const score = db.gradeScores.find(
+          (row) => row.grade_id === grade?.id && row.component_id === component.id,
+        )
+        scores[component.id] = score?.score ?? null
+      }
       return {
         id: student.id,
         name: userName(student.user_id),
@@ -186,7 +204,8 @@ const gradebookStudents = (classId, subjectId, schoolId) => {
         test1: grade?.test1 ?? null,
         test2: grade?.test2 ?? null,
         exam: grade?.exam ?? null,
-        average: grade ? averageOf(grade) : null,
+        scores,
+        average: grade ? weightedAverageOf(grade) : null,
       }
     })
     .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
@@ -504,16 +523,27 @@ function studentDashboard(config) {
 function studentGrades(config) {
   const { user, school } = requireActiveTenant(config)
   const student = studentForUser(user.id, school.id)
-  const { rows, average } = studentGradesFor(student)
-  return ok(config, { class: classOfStudent(student.id, school.id), academic_year: currentYearFor(school.id), grades: rows, average })
+  const semesterId = config.params?.semester_id
+  const { rows, average } = studentGradesFor(student, semesterId)
+  const year = currentYearFor(school.id)
+  const semester = semesterId ? byId(db.semesters, semesterId) : null
+  return ok(config, {
+    class: classOfStudent(student.id, school.id),
+    academic_year: year,
+    semester,
+    semesters: semestersFor(school.id, year?.id),
+    grades: rows,
+    average,
+  })
 }
 
 function studentReportCard(config) {
   const { user, school } = requireActiveTenant(config)
   if (!(planOf(school)?.features ?? []).includes('report_cards')) throw fail(403, 'This feature is not available on your current plan.')
   const student = studentForUser(user.id, school.id)
+  const semesterId = config.params?.semester_id
   const klass = classOfStudent(student.id, school.id)
-  const { rows, average } = studentGradesFor(student)
+  const { rows, average } = studentGradesFor(student, semesterId)
   let rank = null
   let classSize = 0
   if (klass) {
@@ -523,13 +553,67 @@ function studentReportCard(config) {
       .map((entry) => byId(db.students, entry.student_id))
     classSize = classmates.length
     const ranked = classmates
-      .map((classmate) => ({ id: classmate.id, average: studentGradesFor(classmate).average }))
+      .map((classmate) => ({ id: classmate.id, average: studentGradesFor(classmate, semesterId).average }))
       .filter((item) => item.average !== null)
       .sort((a, b) => b.average - a.average)
     const position = ranked.findIndex((item) => item.id === student.id)
     rank = position >= 0 ? position + 1 : null
   }
-  return ok(config, { student: { id: student.id, user_id: user.id, matricule: student.matricule }, class: klass, academic_year: currentYearFor(school.id), grades: rows, average, rank, class_size: classSize })
+  return ok(config, {
+    student: { id: student.id, user_id: user.id, matricule: student.matricule },
+    class: klass,
+    academic_year: currentYearFor(school.id),
+    semester: semesterId ? byId(db.semesters, semesterId) : null,
+    semesters: semestersFor(school.id, currentYearFor(school.id)?.id),
+    grades: rows,
+    average,
+    rank,
+    class_size: classSize,
+  })
+}
+
+function studentTranscript(config) {
+  const { user, school } = requireActiveTenant(config)
+  const student = studentForUser(user.id, school.id)
+  if (!student) throw fail(403, 'No student profile is attached to this account.')
+
+  const enrollments = db.enrollments
+    .filter((entry) => entry.student_id === student.id)
+    .sort((a, b) => b.academic_year_id - a.academic_year_id)
+
+  const years = enrollments.map((enrollment) => {
+    const grades = db.grades
+      .filter((grade) => grade.student_id === student.id && grade.academic_year_id === enrollment.academic_year_id)
+      .map(serializeGrade)
+    const averages = grades.map((grade) => grade.average).filter((value) => value != null)
+    const average = averages.length ? Math.round((averages.reduce((sum, v) => sum + v, 0) / averages.length) * 100) / 100 : null
+    return {
+      academic_year: byId(db.academicYears, enrollment.academic_year_id),
+      class: byId(db.classes, enrollment.class_id),
+      grades,
+      average,
+    }
+  })
+
+  const allAverages = years.map((year) => year.average).filter((value) => value != null)
+  const cumulative = allAverages.length
+    ? Math.round((allAverages.reduce((sum, v) => sum + v, 0) / allAverages.length) * 100) / 100
+    : null
+
+  return ok(config, { student: { id: student.id, user_id: user.id, matricule: student.matricule }, years, cumulative })
+}
+
+function studentExams(config) {
+  const { user, school } = requireActiveTenant(config)
+  const student = studentForUser(user.id, school.id)
+  if (!student) throw fail(403, 'No student profile is attached to this account.')
+  const klass = classOfStudent(student.id, school.id)
+  const year = currentYearFor(school.id)
+  const exams = db.exams
+    .filter((exam) => exam.school_id === school.id && exam.class_id === klass?.id && exam.academic_year_id === year?.id)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
+    .map(serializeExam)
+  return ok(config, { class: klass, academic_year: year, exams })
 }
 
 function studentTimetable(config) {
@@ -749,7 +833,17 @@ function teacherGradebook(config, match) {
   const subject = db.subjects.find((item) => item.id === subjectId && item.school_id === school.id)
   if (!klass || !subject) throw fail(404, 'Not found.')
   assertAssigned(teacher, classId, subjectId)
-  return ok(config, { class: klass, subject, academic_year: currentYearFor(school.id), students: gradebookStudents(classId, subjectId, school.id) })
+  const semesterId = config.params?.semester_id
+  const components = effectiveComponents(school.id, subjectId)
+  return ok(config, {
+    class: klass,
+    subject,
+    academic_year: currentYearFor(school.id),
+    semester: semesterId ? byId(db.semesters, semesterId) : null,
+    semesters: semestersFor(school.id, currentYearFor(school.id)?.id),
+    components: components.map((component) => ({ id: component.id, name: component.name, weight: component.weight })),
+    students: gradebookStudents(classId, subjectId, school.id, semesterId),
+  })
 }
 
 function teacherSaveGrades(config, match) {
@@ -762,23 +856,69 @@ function teacherSaveGrades(config, match) {
   if (!klass || !subject) throw fail(404, 'Not found.')
   assertAssigned(teacher, classId, subjectId)
   const body = readBody(config)
+  const semesterId = config.params?.semester_id
   const year = currentYearFor(school.id)
   for (const row of body.grades ?? []) {
-    const scores = { test1: row.test1 ?? null, test2: row.test2 ?? null, exam: row.exam ?? null }
-    if (!Object.values(scores).some((value) => value !== null && value !== undefined)) continue
+    const legacy = { test1: row.test1 ?? null, test2: row.test2 ?? null, exam: row.exam ?? null }
+    const componentScores = row.scores ?? []
+    const hasLegacy = Object.values(legacy).some((value) => value !== null && value !== undefined)
+    if (!hasLegacy && componentScores.length === 0) continue
+
     const existing = db.grades.find(
-      (grade) => grade.student_id === Number(row.student_id) && grade.subject_id === subjectId && grade.class_id === classId && grade.academic_year_id === year?.id,
+      (grade) =>
+        grade.student_id === Number(row.student_id) &&
+        grade.subject_id === subjectId &&
+        grade.class_id === classId &&
+        grade.academic_year_id === year?.id &&
+        (!semesterId || grade.semester_id === Number(semesterId)),
     )
+    let grade
     if (existing) {
-      existing.test1 = scores.test1
-      existing.test2 = scores.test2
-      existing.exam = scores.exam
+      existing.test1 = legacy.test1
+      existing.test2 = legacy.test2
+      existing.exam = legacy.exam
       existing.teacher_id = teacher.id
+      grade = existing
     } else {
-      db.grades.push({ id: nextMockId(), school_id: school.id, student_id: Number(row.student_id), subject_id: subjectId, class_id: classId, academic_year_id: year?.id, teacher_id: teacher.id, ...scores })
+      grade = {
+        id: nextMockId(),
+        school_id: school.id,
+        student_id: Number(row.student_id),
+        subject_id: subjectId,
+        class_id: classId,
+        academic_year_id: year?.id,
+        semester_id: semesterId ? Number(semesterId) : null,
+        teacher_id: teacher.id,
+        ...legacy,
+      }
+      db.grades.push(grade)
+    }
+
+    for (const score of componentScores) {
+      const found = db.gradeScores.find(
+        (row) => row.grade_id === grade.id && row.component_id === Number(score.component_id),
+      )
+      if (found) found.score = score.score ?? null
+      else {
+        db.gradeScores.push({
+          id: nextMockId(),
+          school_id: school.id,
+          grade_id: grade.id,
+          component_id: Number(score.component_id),
+          score: score.score ?? null,
+        })
+      }
     }
   }
-  return ok(config, { class: klass, subject, academic_year: year, students: gradebookStudents(classId, subjectId, school.id) })
+  const components = effectiveComponents(school.id, subjectId)
+  return ok(config, {
+    class: klass,
+    subject,
+    academic_year: year,
+    semester: semesterId ? byId(db.semesters, semesterId) : null,
+    components: components.map((component) => ({ id: component.id, name: component.name, weight: component.weight })),
+    students: gradebookStudents(classId, subjectId, school.id, semesterId),
+  })
 }
 
 // ---- school admin ----
@@ -1167,6 +1307,221 @@ function superAdminListPayments(config) {
   })
 }
 
+// ---- semesters / grade components / exams / import (admin) ----
+
+function adminListSemesters(config) {
+  const { school } = requireActiveTenant(config)
+  const year = currentYearFor(school.id)
+  return ok(config, { data: year ? semestersFor(school.id, year.id) : [], academic_year: year })
+}
+
+function adminCreateSemester(config) {
+  const { school } = requireActiveTenant(config)
+  const body = readBody(config)
+  const errors = validate(body, ['academic_year_id', 'name'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  const semester = {
+    id: nextMockId(),
+    school_id: school.id,
+    academic_year_id: Number(body.academic_year_id),
+    name: body.name,
+    sequence: Number(body.sequence ?? 1),
+    start_date: body.start_date ?? null,
+    end_date: body.end_date ?? null,
+    is_current: false,
+  }
+  db.semesters.push(semester)
+  if (body.is_current) {
+    db.semesters.forEach((item) => {
+      if (item.school_id === school.id && item.academic_year_id === semester.academic_year_id) item.is_current = item.id === semester.id
+    })
+  }
+  return ok(config, { data: semester }, 201)
+}
+
+function adminActivateSemester(config, match) {
+  const { school } = requireActiveTenant(config)
+  const id = Number(match[1])
+  const semester = byId(db.semesters, id)
+  if (!semester || semester.school_id !== school.id) throw fail(404, 'Not found.')
+  db.semesters.forEach((item) => {
+    if (item.school_id === school.id && item.academic_year_id === semester.academic_year_id) item.is_current = item.id === id
+  })
+  return ok(config, { data: byId(db.semesters, id) })
+}
+
+function adminDeleteSemester(config, match) {
+  const { school } = requireActiveTenant(config)
+  const id = Number(match[1])
+  db.semesters = db.semesters.filter((item) => !(item.id === id && item.school_id === school.id))
+  return ok(config, { message: 'Semester removed.' })
+}
+
+function adminListGradeComponents(config) {
+  const { school } = requireActiveTenant(config)
+  const defaults = db.gradeComponents.filter((component) => component.school_id === school.id && component.subject_id == null)
+  const bySubject = {}
+  for (const component of db.gradeComponents.filter((component) => component.school_id === school.id && component.subject_id != null)) {
+    ;(bySubject[component.subject_id] ??= []).push(component)
+  }
+  return ok(config, { default: defaults, by_subject: bySubject })
+}
+
+function adminCreateGradeComponent(config) {
+  const { school } = requireActiveTenant(config)
+  const body = readBody(config)
+  const errors = validate(body, ['name', 'weight'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  const component = {
+    id: nextMockId(),
+    school_id: school.id,
+    subject_id: body.subject_id ?? null,
+    name: body.name,
+    weight: Number(body.weight),
+    sequence: db.gradeComponents.filter((component) => component.school_id === school.id).length + 1,
+  }
+  db.gradeComponents.push(component)
+  return ok(config, { data: component }, 201)
+}
+
+function adminUpdateGradeComponent(config, match) {
+  const { school } = requireActiveTenant(config)
+  const component = db.gradeComponents.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
+  if (!component) throw fail(404, 'Not found.')
+  const body = readBody(config)
+  component.name = body.name ?? component.name
+  component.weight = body.weight !== undefined ? Number(body.weight) : component.weight
+  component.subject_id = body.subject_id !== undefined ? body.subject_id : component.subject_id
+  return ok(config, { data: component })
+}
+
+function adminDeleteGradeComponent(config, match) {
+  const { school } = requireActiveTenant(config)
+  const id = Number(match[1])
+  db.gradeComponents = db.gradeComponents.filter((item) => !(item.id === id && item.school_id === school.id))
+  return ok(config, { message: 'Component removed.' })
+}
+
+function adminListExams(config) {
+  const { school } = requireActiveTenant(config)
+  const classId = config.params?.class_id
+  const exams = db.exams
+    .filter((exam) => exam.school_id === school.id && (!classId || exam.class_id === Number(classId)))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
+    .map(serializeExam)
+  return ok(config, { data: exams })
+}
+
+function adminCreateExam(config) {
+  const { school } = requireActiveTenant(config)
+  const body = readBody(config)
+  const errors = validate(body, ['subject_id', 'class_id', 'date', 'start', 'end'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  const exam = {
+    id: nextMockId(),
+    school_id: school.id,
+    academic_year_id: currentYearFor(school.id)?.id,
+    semester_id: body.semester_id ?? currentSemesterFor(school.id, currentYearFor(school.id)?.id)?.id ?? null,
+    subject_id: Number(body.subject_id),
+    class_id: Number(body.class_id),
+    date: body.date,
+    start: body.start,
+    end: body.end,
+    room: body.room ?? null,
+  }
+  db.exams.push(exam)
+  return ok(config, { data: serializeExam(exam) }, 201)
+}
+
+function adminDeleteExam(config, match) {
+  const { school } = requireActiveTenant(config)
+  const id = Number(match[1])
+  db.exams = db.exams.filter((item) => !(item.id === id && item.school_id === school.id))
+  return ok(config, { message: 'Exam session removed.' })
+}
+
+function adminExamRanking(config) {
+  const { school } = requireActiveTenant(config)
+  const classId = Number(config.params?.class_id)
+  const subjectId = Number(config.params?.subject_id)
+  const semesterId = config.params?.semester_id
+  const year = currentYearFor(school.id)
+  const students = db.enrollments
+    .filter((entry) => entry.class_id === classId && entry.academic_year_id === year?.id)
+    .map((entry) => {
+      const student = byId(db.students, entry.student_id)
+      const grade = db.grades.find(
+        (item) =>
+          item.student_id === student.id &&
+          item.subject_id === subjectId &&
+          item.class_id === classId &&
+          item.academic_year_id === year?.id &&
+          (!semesterId || item.semester_id === Number(semesterId)),
+      )
+      return { student_id: student.id, name: userName(student.user_id), matricule: student.matricule, average: grade ? weightedAverageOf(grade) : null }
+    })
+    .filter((item) => item.average !== null)
+    .sort((a, b) => b.average - a.average)
+    .map((item, index) => ({ ...item, rank: index + 1 }))
+  return ok(config, {
+    subject: byId(db.subjects, subjectId),
+    class: byId(db.classes, classId),
+    academic_year: year,
+    semester: semesterId ? byId(db.semesters, semesterId) : null,
+    ranking: students,
+  })
+}
+
+function teacherListExams(config) {
+  const { user, school } = requireActiveTenant(config)
+  const teacher = teacherForUser(user.id, school.id)
+  if (!teacher) throw fail(403, 'No teacher profile is attached to this account.')
+  const assignments = db.teachingAssignments.filter(
+    (assignment) => assignment.teacher_id === teacher.id && assignment.academic_year_id === currentYearFor(school.id)?.id,
+  )
+  const exams = db.exams
+    .filter((exam) =>
+      exam.school_id === school.id &&
+      assignments.some((assignment) => assignment.class_id === exam.class_id && assignment.subject_id === exam.subject_id),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
+    .map(serializeExam)
+  return ok(config, { data: exams })
+}
+
+function adminImport(config) {
+  const { school } = requireActiveTenant(config)
+  const body = readBody(config)
+  const type = body.type
+  const rows = body.rows ?? []
+  let created = 0
+  const errors = []
+
+  for (const [index, row] of rows.entries()) {
+    try {
+      if (type === 'teachers') {
+        const userId = nextMockId()
+        db.users.push({ id: userId, school_id: school.id, name: row.name, email: row.email, password: row.password ?? 'password123', role: 'teacher' })
+        db.teachers.push({ id: nextMockId(), school_id: school.id, user_id: userId, staff_no: row.staff_no ?? null })
+      } else {
+        const classId = Number(row.class_id)
+        const klass = db.classes.find((item) => item.id === classId && item.school_id === school.id)
+        if (!klass) throw new Error('A class is required for each imported student.')
+        const userId = nextMockId()
+        db.users.push({ id: userId, school_id: school.id, name: row.name, email: row.email, password: row.password ?? 'password123', role: 'student' })
+        const student = { id: nextMockId(), school_id: school.id, user_id: userId, matricule: row.matricule ?? `IMP-${nextMockId()}` }
+        db.students.push(student)
+        db.enrollments.push({ id: nextMockId(), school_id: school.id, student_id: student.id, class_id: classId, academic_year_id: currentYearFor(school.id)?.id })
+      }
+      created++
+    } catch (err) {
+      errors.push({ row: index + 1, name: row.name ?? null, message: err.message })
+    }
+  }
+
+  return ok(config, { created, skipped: errors.length, errors })
+}
+
 // ---------------------------------------------------------------------------
 // Route table
 // ---------------------------------------------------------------------------
@@ -1197,9 +1552,26 @@ const ROUTES = [
   ['post', /^\/teacher\/classes\/(\d+)\/attendance$/, teacherAttendancePost],
   ['get', /^\/admin\/attendance$/, adminAttendanceGet],
   ['post', /^\/admin\/attendance$/, adminAttendancePost],
+  ['get', /^\/admin\/semesters$/, adminListSemesters],
+  ['post', /^\/admin\/semesters$/, adminCreateSemester],
+  ['post', /^\/admin\/semesters\/(\d+)\/activate$/, adminActivateSemester],
+  ['delete', /^\/admin\/semesters\/(\d+)$/, adminDeleteSemester],
+  ['get', /^\/admin\/grade-components$/, adminListGradeComponents],
+  ['post', /^\/admin\/grade-components$/, adminCreateGradeComponent],
+  ['put', /^\/admin\/grade-components\/(\d+)$/, adminUpdateGradeComponent],
+  ['delete', /^\/admin\/grade-components\/(\d+)$/, adminDeleteGradeComponent],
+  ['get', /^\/admin\/exams\/ranking$/, adminExamRanking],
+  ['get', /^\/admin\/exams$/, adminListExams],
+  ['post', /^\/admin\/exams$/, adminCreateExam],
+  ['delete', /^\/admin\/exams\/(\d+)$/, adminDeleteExam],
+  ['post', /^\/admin\/import$/, adminImport],
   ['get', /^\/student\/attendance$/, studentAttendance],
+  ['get', /^\/student\/transcript$/, studentTranscript],
+  ['get', /^\/student\/exams$/, studentExams],
   ['get', /^\/teacher\/classes\/(\d+)\/subjects\/(\d+)\/gradebook$/, teacherGradebook],
   ['post', /^\/teacher\/classes\/(\d+)\/subjects\/(\d+)\/grades$/, teacherSaveGrades],
+  ['get', /^\/teacher\/exams\/ranking$/, adminExamRanking],
+  ['get', /^\/teacher\/exams$/, teacherListExams],
   ['get', /^\/admin\/dashboard$/, adminDashboard],
   ['get', /^\/admin\/billing$/, billingGet],
   ['post', /^\/admin\/billing\/upgrade$/, billingUpgrade],

@@ -8,10 +8,13 @@ use App\Models\Attendance;
 use App\Models\Document;
 use App\Models\DocumentRequest;
 use App\Models\Enrollment;
+use App\Models\Exam;
 use App\Models\Grade;
+use App\Models\GradeComponent;
 use App\Models\Notification;
 use App\Models\School;
 use App\Models\SchoolClass;
+use App\Models\Semester;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\Subscription;
@@ -197,13 +200,23 @@ class DatabaseSeeder extends Seeder
         $this->assign($school, $felixT, $database, $l3a, $current);
         $this->assign($school, $felixT, $networking, $l3a, $current);
 
-        // Grades
-        $this->grade($school, $johnS, $english, $l3a, $current, $davidT, 15, 16, 17);
-        $this->grade($school, $johnS, $math, $l3a, $current, $sarahT, 14, 16, 16);
-        $this->grade($school, $johnS, $database, $l3a, $current, $felixT, 16, 17, 18);
-        $this->grade($school, $johnS, $networking, $l3a, $current, $felixT, 13, 15, 15);
-        $this->grade($school, $maryS, $english, $l3a, $current, $davidT, 14, 15, 16);
-        $this->grade($school, $peterS, $english, $l3a, $current, $davidT, 12, 14, 15);
+        // Semesters (grading periods)
+        $semester1 = $this->semester($school, $current, 'Semester 1', 1, true);
+        $this->semester($school, $current, 'Semester 2', 2, false);
+
+        // Grade components (weighted grading, school-wide default)
+        $assignments = $this->component($school, null, 'Assignments', 30, 1);
+        $quizzes = $this->component($school, null, 'Quizzes', 20, 2);
+        $midterm = $this->component($school, null, 'Midterm', 20, 3);
+        $examC = $this->component($school, null, 'Exam', 30, 4);
+
+        // Grades (assigned to Semester 1)
+        $this->grade($school, $johnS, $english, $l3a, $current, $davidT, 15, 16, 17, $semester1);
+        $this->grade($school, $johnS, $math, $l3a, $current, $sarahT, 14, 16, 16, $semester1);
+        $this->grade($school, $johnS, $database, $l3a, $current, $felixT, 16, 17, 18, $semester1);
+        $this->grade($school, $johnS, $networking, $l3a, $current, $felixT, 13, 15, 15, $semester1);
+        $this->grade($school, $maryS, $english, $l3a, $current, $davidT, 14, 15, 16, $semester1);
+        $this->grade($school, $peterS, $english, $l3a, $current, $davidT, 12, 14, 15, $semester1);
 
         // Timetable (Level 3A)
         $slots = [
@@ -254,6 +267,11 @@ class DatabaseSeeder extends Seeder
 
         $this->announcement($school, $chen, 'Exam Timetable Published', 'The first semester examination timetable has been published.', 'all');
         $this->notification($school, $john, 'Your transcript is ready', 'Your Transcript Request (REQ-1030) is ready to download.');
+
+        // Exam sessions (Semester 1, Level 3A)
+        $this->exam($school, $current, $semester1, $english, $l3a, now()->addDays(14)->toDateString(), '08:00', '10:00', 'Hall A');
+        $this->exam($school, $current, $semester1, $math, $l3a, now()->addDays(15)->toDateString(), '08:00', '10:00', 'Hall A');
+        $this->exam($school, $current, $semester1, $database, $l3a, now()->addDays(16)->toDateString(), '10:00', '12:00', 'Lab 2');
 
         return $school;
     }
@@ -416,6 +434,7 @@ class DatabaseSeeder extends Seeder
         ?float $test1,
         ?float $test2,
         ?float $exam,
+        ?Semester $semester = null,
     ): void {
         Grade::firstOrCreate(
             [
@@ -426,10 +445,63 @@ class DatabaseSeeder extends Seeder
             ],
             [
                 'school_id' => $school->id,
+                'semester_id' => $semester?->id,
                 'teacher_id' => $teacher->id,
                 'test1' => $test1,
                 'test2' => $test2,
                 'exam' => $exam,
+            ],
+        );
+    }
+
+    private function semester(School $school, AcademicYear $year, string $name, int $sequence, bool $current): Semester
+    {
+        return Semester::firstOrCreate(
+            ['school_id' => $school->id, 'academic_year_id' => $year->id, 'name' => $name],
+            [
+                'sequence' => $sequence,
+                'start_date' => $current ? now()->startOfMonth()->toDateString() : now()->addMonths(3)->startOfMonth()->toDateString(),
+                'end_date' => now()->addMonths(5)->endOfMonth()->toDateString(),
+                'is_current' => $current,
+            ],
+        );
+    }
+
+    private function component(School $school, ?Subject $subject, string $name, float $weight, int $sequence): GradeComponent
+    {
+        return GradeComponent::firstOrCreate(
+            ['school_id' => $school->id, 'subject_id' => $subject?->id, 'name' => $name],
+            [
+                'weight' => $weight,
+                'sequence' => $sequence,
+            ],
+        );
+    }
+
+    private function exam(
+        School $school,
+        AcademicYear $year,
+        Semester $semester,
+        Subject $subject,
+        SchoolClass $class,
+        string $date,
+        string $start,
+        string $end,
+        string $room,
+    ): void {
+        Exam::firstOrCreate(
+            [
+                'school_id' => $school->id,
+                'subject_id' => $subject->id,
+                'class_id' => $class->id,
+                'date' => $date,
+                'start' => $start,
+            ],
+            [
+                'academic_year_id' => $year->id,
+                'semester_id' => $semester->id,
+                'end' => $end,
+                'room' => $room,
             ],
         );
     }

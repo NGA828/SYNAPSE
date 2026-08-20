@@ -8,13 +8,13 @@ export async function getDashboard() {
   return data
 }
 
-export async function getGrades() {
-  const { data } = await apiClient.get('/student/grades')
+export async function getGrades(semesterId) {
+  const { data } = await apiClient.get('/student/grades', { params: { semester_id: semesterId } })
   return data
 }
 
-export async function getReportCard() {
-  const { data } = await apiClient.get('/student/report-card')
+export async function getReportCard(semesterId) {
+  const { data } = await apiClient.get('/student/report-card', { params: { semester_id: semesterId } })
   return data
 }
 

@@ -20,15 +20,18 @@ export async function getClassStudents(classId, subjectId) {
   return data
 }
 
-export async function getGradebook(classId, subjectId) {
-  const { data } = await apiClient.get(`/teacher/classes/${classId}/subjects/${subjectId}/gradebook`)
+export async function getGradebook(classId, subjectId, semesterId) {
+  const { data } = await apiClient.get(`/teacher/classes/${classId}/subjects/${subjectId}/gradebook`, {
+    params: { semester_id: semesterId },
+  })
   return data
 }
 
-export async function saveGrades(classId, subjectId, grades) {
+export async function saveGrades(classId, subjectId, grades, semesterId) {
   const { data } = await apiClient.post(
     `/teacher/classes/${classId}/subjects/${subjectId}/grades`,
     { grades },
+    { params: { semester_id: semesterId } },
   )
   return data
 }

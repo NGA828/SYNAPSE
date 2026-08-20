@@ -1,18 +1,22 @@
 import { useState } from 'react'
-import { BookMarked, CalendarDays, GraduationCap, School } from 'lucide-react'
+import { BookMarked, CalendarDays, CalendarRange, GraduationCap, School, Scale } from 'lucide-react'
 import { PageContainer } from '../../components/layout/PageContainer.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { AcademicYearManager } from '../../components/admin/AcademicYearManager.jsx'
 import { ClassManager } from '../../components/admin/ClassManager.jsx'
 import { SubjectManager } from '../../components/admin/SubjectManager.jsx'
 import { AssignmentManager } from '../../components/admin/AssignmentManager.jsx'
+import { SemesterManager } from '../../components/admin/SemesterManager.jsx'
+import { GradeComponentManager } from '../../components/admin/GradeComponentManager.jsx'
 import { cn } from '../../utils/cn.js'
 
 const TABS = [
   { id: 'years', label: 'Academic years', icon: CalendarDays, component: AcademicYearManager },
+  { id: 'semesters', label: 'Semesters', icon: CalendarRange, component: SemesterManager },
   { id: 'classes', label: 'Classes', icon: School, component: ClassManager },
   { id: 'subjects', label: 'Subjects', icon: BookMarked, component: SubjectManager },
   { id: 'assignments', label: 'Teaching assignments', icon: GraduationCap, component: AssignmentManager },
+  { id: 'grading', label: 'Grading', icon: Scale, component: GradeComponentManager },
 ]
 
 export default function StructurePage() {
