@@ -441,6 +441,7 @@ function onboardingRegister(config) {
     email: body.school.email ?? null,
     phone: body.school.phone ?? null,
     address: body.school.address ?? null,
+    logo: body.school.logo ?? null,
     status: 'trial',
     timezone: 'Africa/Douala',
     primary_color: null,

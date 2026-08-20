@@ -35,6 +35,7 @@ class OnboardingService
                 'email' => $data['school']['email'] ?? null,
                 'phone' => $data['school']['phone'] ?? null,
                 'address' => $data['school']['address'] ?? null,
+                'logo' => $data['school']['logo'] ?? null,
                 'status' => School::STATUS_TRIAL,
                 'timezone' => $data['school']['timezone'] ?? 'Africa/Douala',
             ]);

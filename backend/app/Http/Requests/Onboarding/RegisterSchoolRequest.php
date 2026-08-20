@@ -22,6 +22,7 @@ class RegisterSchoolRequest extends FormRequest
             'school.email' => ['nullable', 'email', 'max:255'],
             'school.phone' => ['nullable', 'string', 'max:50'],
             'school.address' => ['nullable', 'string', 'max:255'],
+            'school.logo' => ['nullable', 'string', 'max:500000'],
             'admin.name' => ['required', 'string', 'max:255'],
             'admin.email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'admin.password' => ['required', 'string', 'min:8'],

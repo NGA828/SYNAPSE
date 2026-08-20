@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, ImagePlus, Trash2 } from 'lucide-react'
 import { useAsyncList } from '../../hooks/useAsyncList.js'
 import { listPublicPlans, registerSchool } from '../../services/onboardingService.js'
 import { Logo } from '../../components/brand/Logo.jsx'
@@ -15,8 +15,9 @@ const STEPS = ['School', 'Administrator', 'Plan', 'Review']
 
 export default function OnboardingPage() {
   const { data: plans, loading } = useAsyncList(listPublicPlans)
+  const logoRef = useRef(null)
   const [step, setStep] = useState(0)
-  const [school, setSchool] = useState({ name: '', slug: '', email: '', phone: '', address: '' })
+  const [school, setSchool] = useState({ name: '', slug: '', email: '', phone: '', address: '', logo: null })
   const [admin, setAdmin] = useState({ name: '', email: '', password: '' })
   const [planId, setPlanId] = useState(null)
   const [error, setError] = useState(null)
@@ -25,6 +26,15 @@ export default function OnboardingPage() {
 
   const setSchoolField = (field) => (event) => setSchool((current) => ({ ...current, [field]: event.target.value }))
   const setAdminField = (field) => (event) => setAdmin((current) => ({ ...current, [field]: event.target.value }))
+
+  const handleLogoFile = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setSchool((current) => ({ ...current, logo: reader.result }))
+    reader.readAsDataURL(file)
+    event.target.value = ''
+  }
 
   const canContinue =
     (step === 0 && school.name && school.slug) ||
@@ -101,6 +111,51 @@ export default function OnboardingPage() {
 
             {step === 0 ? (
               <>
+                <input
+                  ref={logoRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml"
+                  className="hidden"
+                  onChange={handleLogoFile}
+                />
+                <div>
+                  <p className="mb-1.5 block text-sm font-medium text-slate-700">School logo</p>
+                  <div className="flex items-center gap-4">
+                    {school.logo ? (
+                      <img
+                        src={school.logo}
+                        alt="School logo"
+                        className="size-16 shrink-0 rounded-2xl border border-slate-200 object-cover"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => logoRef.current?.click()}
+                        className="flex size-16 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 text-slate-400 transition hover:border-brand-400 hover:text-brand-500"
+                      >
+                        <ImagePlus className="size-6" aria-hidden="true" />
+                      </button>
+                    )}
+                    <div>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => logoRef.current?.click()}>
+                        <ImagePlus className="size-4" aria-hidden="true" />
+                        {school.logo ? 'Change logo' : 'Upload logo'}
+                      </Button>
+                      <p className="mt-1.5 text-xs text-slate-400">PNG, JPG or SVG — optional</p>
+                      {school.logo ? (
+                        <button
+                          type="button"
+                          onClick={() => setSchool((current) => ({ ...current, logo: null }))}
+                          className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-rose-600 hover:underline"
+                        >
+                          <Trash2 className="size-3.5" aria-hidden="true" />
+                          Remove logo
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
                 <Input label="School name" value={school.name} onChange={setSchoolField('name')} placeholder="AICS Cameroon" />
                 <Input label="Slug (URL)" value={school.slug} onChange={setSchoolField('slug')} placeholder="aics" />
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -153,8 +208,17 @@ export default function OnboardingPage() {
             ) : null}
 
             {step === 3 ? (
-              <div className="space-y-2 text-sm">
-                <p><span className="text-slate-400">School:</span> {school.name} ({school.slug})</p>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center gap-3">
+                  {school.logo ? (
+                    <img src={school.logo} alt="School logo" className="size-12 rounded-xl border border-slate-200 object-cover" />
+                  ) : (
+                    <span className="flex size-12 items-center justify-center rounded-xl bg-slate-100 text-xs font-bold text-slate-400">
+                      {String(school.name).slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <p><span className="text-slate-400">School:</span> {school.name} ({school.slug})</p>
+                </div>
                 <p><span className="text-slate-400">Administrator:</span> {admin.name} · {admin.email}</p>
                 <p>
                   <span className="text-slate-400">Plan:</span>{' '}
