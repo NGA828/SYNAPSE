@@ -86,6 +86,80 @@
   .animate-scale-in {
     animation: scale-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
+
+  /* ---------------------------------------------------------------- */
+  /* Landing-page motion system                                       */
+  /* ---------------------------------------------------------------- */
+
+  /* Scroll reveal (driven by the <Reveal/> component) */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+      opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+    will-change: opacity, transform;
+  }
+
+  .reveal.reveal-left {
+    transform: translateX(-48px);
+  }
+
+  .reveal.reveal-right {
+    transform: translateX(48px);
+  }
+
+  .reveal.reveal-scale {
+    transform: scale(0.92);
+  }
+
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Ambient float */
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-float-slow {
+    animation: float 9s ease-in-out infinite;
+  }
+
+  .animate-float-reverse {
+    animation: float 7s ease-in-out infinite reverse;
+  }
+
+  /* Animated gradient (text or background) */
+  .animate-gradient-x {
+    background-size: 200% auto;
+    animation: gradient-x 6s ease infinite;
+  }
+
+  /* Slow drifting aurora blobs */
+  .animate-aurora {
+    animation: aurora 18s ease-in-out infinite alternate;
+  }
+
+  .animate-aurora-slow {
+    animation: aurora 26s ease-in-out infinite alternate-reverse;
+  }
+
+  /* Logo / school marquee */
+  .marquee-track {
+    animation: marquee 28s linear infinite;
+  }
+
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  /* Soft glow pulse for the featured pricing card */
+  .animate-glow {
+    animation: glow 3.5s ease-in-out infinite;
+  }
 }
 
 @keyframes fade-in {
@@ -105,5 +179,78 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+@keyframes gradient-x {
+  0%,
+  100% {
+    background-position: 0% center;
+  }
+  50% {
+    background-position: 100% center;
+  }
+}
+
+@keyframes aurora {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(60px, -30px, 0) scale(1.15);
+  }
+  100% {
+    transform: translate3d(-40px, 30px, 0) scale(1.05);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(99 102 241 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgb(99 102 241 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal.reveal-left,
+  .reveal.reveal-right,
+  .reveal.reveal-scale {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .animate-float,
+  .animate-float-slow,
+  .animate-float-reverse,
+  .animate-gradient-x,
+  .animate-aurora,
+  .animate-aurora-slow,
+  .animate-glow,
+  .marquee-track {
+    animation: none !important;
   }
 }

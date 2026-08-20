@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 import { Badge } from '../ui/Badge.jsx'
+import { Reveal } from './motion.jsx'
+import { cn } from '../../utils/cn.js'
 
 const PLANS = [
   {
@@ -42,50 +44,52 @@ export function Pricing() {
   return (
     <section id="pricing" className="scroll-mt-20 bg-white py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
+        <Reveal className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight text-slate-900">
             Simple, per-school pricing
           </h2>
           <p className="mt-3 text-slate-600">
             Every plan starts with a free 14-day trial. No credit card required.
           </p>
-        </div>
+        </Reveal>
 
         <div className="mt-12 grid gap-6 lg:grid-cols-3">
-          {PLANS.map((plan) => (
-            <div
-              key={plan.name}
-              className={`relative flex flex-col rounded-2xl border p-6 ${
-                plan.featured
-                  ? 'border-brand-500 bg-gradient-to-b from-brand-50/60 to-white shadow-xl shadow-brand-600/5'
-                  : 'border-slate-200 bg-white'
-              }`}
-            >
-              {plan.featured ? (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge variant="info">Most popular</Badge>
-                </span>
-              ) : null}
-              <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
-              <p className="mt-1 text-sm text-slate-500">{plan.tagline}</p>
-              <p className="mt-4 text-4xl font-bold tracking-tight text-slate-900">
-                {plan.price}
-                <span className="text-sm font-normal text-slate-400"> XAF/mo</span>
-              </p>
-              <ul className="mt-6 flex-1 space-y-3 text-sm text-slate-600">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2">
-                    <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden="true" />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-              <Link to="/onboarding" className="mt-6 block">
-                <Button variant={plan.featured ? 'primary' : 'secondary'} className="w-full">
-                  Start free trial
-                </Button>
-              </Link>
-            </div>
+          {PLANS.map((plan, index) => (
+            <Reveal key={plan.name} delay={index * 120}>
+              <div
+                className={cn(
+                  'relative flex h-full flex-col rounded-2xl border p-6 transition-all duration-300 hover:-translate-y-1.5',
+                  plan.featured
+                    ? 'animate-glow border-brand-500 bg-gradient-to-b from-brand-50/60 to-white shadow-xl shadow-brand-600/5'
+                    : 'border-slate-200 bg-white hover:shadow-xl',
+                )}
+              >
+                {plan.featured ? (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge variant="info">Most popular</Badge>
+                  </span>
+                ) : null}
+                <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
+                <p className="mt-1 text-sm text-slate-500">{plan.tagline}</p>
+                <p className="mt-4 text-4xl font-bold tracking-tight text-slate-900">
+                  {plan.price}
+                  <span className="text-sm font-normal text-slate-400"> XAF/mo</span>
+                </p>
+                <ul className="mt-6 flex-1 space-y-3 text-sm text-slate-600">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden="true" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+                <Link to="/onboarding" className="mt-6 block">
+                  <Button variant={plan.featured ? 'primary' : 'secondary'} className="w-full">
+                    Start free trial
+                  </Button>
+                </Link>
+              </div>
+            </Reveal>
           ))}
         </div>
       </div>

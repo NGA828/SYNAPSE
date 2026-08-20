@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Logo } from '../brand/Logo.jsx'
+import { Reveal } from './motion.jsx'
 
 const COLUMNS = [
   {
@@ -24,7 +25,7 @@ const COLUMNS = [
 export function Footer() {
   return (
     <footer className="border-t border-slate-200 bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <Reveal className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid gap-8 md:grid-cols-4">
           <div className="md:col-span-2">
             <Logo />
@@ -59,7 +60,7 @@ export function Footer() {
         <div className="mt-10 border-t border-slate-100 pt-6 text-sm text-slate-400">
           © 2026 SYNAPSE. All rights reserved.
         </div>
-      </div>
+      </Reveal>
     </footer>
   )
 }

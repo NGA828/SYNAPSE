@@ -1,5 +1,6 @@
 import { Fingerprint, Layers, Lock } from 'lucide-react'
 import multiTenant from '../../assets/multi-tenant.png'
+import { Reveal, TiltCard } from './motion.jsx'
 
 const POINTS = [
   {
@@ -24,37 +25,47 @@ const POINTS = [
 
 export function MultiTenant() {
   return (
-    <section id="multi-tenant" className="scroll-mt-20 bg-slate-50 py-20">
+    <section id="multi-tenant" className="scroll-mt-20 overflow-hidden bg-slate-50 py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-2">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5">
-            <img
-              src={multiTenant}
-              alt="Multiple isolated schools on one SYNAPSE platform"
-              className="block h-auto w-full"
-              loading="lazy"
-            />
-          </div>
+          <Reveal variant="left">
+            <TiltCard max={6}>
+              <div className="animate-float-slow overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5">
+                <img
+                  src={multiTenant}
+                  alt="Multiple isolated schools on one SYNAPSE platform"
+                  className="block h-auto w-full"
+                  loading="lazy"
+                />
+              </div>
+            </TiltCard>
+          </Reveal>
 
           <div>
-            <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-              Built for many schools, isolated by design
-            </h2>
-            <p className="mt-3 text-slate-600">
-              SYNAPSE SaaS gives every school its own private workspace — while a platform
-              super admin manages them all from one place.
-            </p>
+            <Reveal>
+              <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+                Built for many schools, isolated by design
+              </h2>
+            </Reveal>
+            <Reveal delay={100}>
+              <p className="mt-3 text-slate-600">
+                SYNAPSE SaaS gives every school its own private workspace — while a platform
+                super admin manages them all from one place.
+              </p>
+            </Reveal>
             <div className="mt-8 space-y-6">
-              {POINTS.map(({ icon: Icon, title, description }) => (
-                <div key={title} className="flex gap-4">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-                    <Icon className="size-5" aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-slate-500">{description}</p>
+              {POINTS.map(({ icon: Icon, title, description }, index) => (
+                <Reveal key={title} delay={150 + index * 120} variant="right">
+                  <div className="group flex gap-4">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 transition-transform duration-300 group-hover:scale-110">
+                      <Icon className="size-5" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-500">{description}</p>
+                    </div>
                   </div>
-                </div>
+                </Reveal>
               ))}
             </div>
           </div>

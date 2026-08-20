@@ -26,12 +26,12 @@ export function Navbar() {
   return (
     <header
       className={cn(
-        'sticky top-0 z-40 transition',
-        scrolled ? 'border-b border-slate-200 bg-white/80 backdrop-blur' : 'bg-transparent',
+        'sticky top-0 z-40 animate-fade-in transition-all duration-300',
+        scrolled ? 'border-b border-slate-200 bg-white/80 shadow-sm backdrop-blur' : 'bg-transparent',
       )}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" aria-label="Synapse home">
+        <Link to="/" aria-label="Synapse home" className="transition-transform hover:scale-105">
           <Logo />
         </Link>
 
