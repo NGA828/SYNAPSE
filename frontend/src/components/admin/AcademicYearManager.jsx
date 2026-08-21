@@ -13,6 +13,8 @@ import { ErrorDisplay } from '../forms/ErrorDisplay.jsx'
 export function AcademicYearManager() {
   const { data: years, loading, error, reload } = useAsyncList(listAcademicYears)
   const [name, setName] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -21,8 +23,10 @@ export function AcademicYearManager() {
     setSubmitting(true)
     setFormError(null)
     try {
-      await createAcademicYear({ name })
+      await createAcademicYear({ name, start_date: startDate || null, end_date: endDate || null })
       setName('')
+      setStartDate('')
+      setEndDate('')
       await reload()
     } catch (err) {
       setFormError(err?.response?.data?.message ?? 'Could not create the year.')
@@ -44,13 +48,15 @@ export function AcademicYearManager() {
         action={<Badge variant="teal" dot>{years?.length ?? 0} years</Badge>}
       />
       <CardBody>
-        <form onSubmit={handleCreate} className="mb-5 flex gap-2">
+        <form onSubmit={handleCreate} className="mb-5 grid gap-2 sm:grid-cols-4">
           <Input
             name="year"
             placeholder="e.g. 2027/2028"
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
+          <Input name="start_date" label="Start date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+          <Input name="end_date" label="End date" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
           <Button type="submit" loading={submitting}>
             Add year
           </Button>

@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { BookMarked } from 'lucide-react'
+import { BookMarked, Pencil, Trash2 } from 'lucide-react'
 import { useAsyncList } from '../../hooks/useAsyncList.js'
-import { createSubject, listSubjects } from '../../services/adminService.js'
+import { createSubject, deleteSubject, listSubjects, updateSubject } from '../../services/adminService.js'
 import { Button } from '../ui/Button.jsx'
 import { Input } from '../ui/Input.jsx'
 import { Badge } from '../ui/Badge.jsx'
 import { Card, CardBody, CardHeader } from '../ui/Card.jsx'
 import { Spinner } from '../ui/Spinner.jsx'
 import { ErrorDisplay } from '../forms/ErrorDisplay.jsx'
+import { Modal } from '../ui/Modal.jsx'
 
 export function SubjectManager() {
   const { data: subjects, loading, error, reload } = useAsyncList(listSubjects)
@@ -15,6 +16,7 @@ export function SubjectManager() {
   const [code, setCode] = useState('')
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [editing, setEditing] = useState(null)
 
   const handleCreate = async (event) => {
     event.preventDefault()
@@ -29,6 +31,34 @@ export function SubjectManager() {
       setFormError(err?.response?.data?.message ?? 'Could not create the subject.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleUpdate = async (event) => {
+    event.preventDefault()
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      await updateSubject(editing.id, { name, code: code || null })
+      setEditing(null)
+      setName('')
+      setCode('')
+      await reload()
+    } catch (err) {
+      setFormError(err?.response?.data?.message ?? 'Could not update the subject.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDelete = async (subject) => {
+    if (!window.confirm(`Remove ${subject.name}? Related assignments and timetable entries will also be removed.`)) return
+    setFormError(null)
+    try {
+      await deleteSubject(subject.id)
+      await reload()
+    } catch (err) {
+      setFormError(err?.response?.data?.message ?? 'Could not remove the subject.')
     }
   }
 
@@ -80,11 +110,27 @@ export function SubjectManager() {
                   {item.name}
                 </span>
                 {item.code ? <Badge variant="neutral">{item.code}</Badge> : null}
+                <span className="flex gap-1">
+                  <Button type="button" size="sm" variant="ghost" title="Edit subject" onClick={() => { setEditing(item); setName(item.name); setCode(item.code ?? '') }}>
+                    <Pencil className="size-4" aria-hidden="true" />
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" title="Delete subject" onClick={() => handleDelete(item)}>
+                    <Trash2 className="size-4 text-rose-600" aria-hidden="true" />
+                  </Button>
+                </span>
               </li>
             ))}
           </ul>
         )}
       </CardBody>
+      <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit subject" description="Update the subject name or code.">
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <Input label="Subject" value={name} onChange={(event) => setName(event.target.value)} />
+          <Input label="Code" value={code} onChange={(event) => setCode(event.target.value)} />
+          <ErrorDisplay message={formError} />
+          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button><Button type="submit" loading={submitting}>Save changes</Button></div>
+        </form>
+      </Modal>
     </Card>
   )
 }

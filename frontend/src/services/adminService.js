@@ -45,6 +45,16 @@ export async function createSubject(payload) {
   return data.data
 }
 
+export async function updateSubject(id, payload) {
+  const { data } = await apiClient.put(`/admin/subjects/${id}`, payload)
+  return data.data
+}
+
+export async function deleteSubject(id) {
+  const { data } = await apiClient.delete(`/admin/subjects/${id}`)
+  return data
+}
+
 export async function listTeachingAssignments() {
   const { data } = await apiClient.get('/admin/teaching-assignments')
   return data.data

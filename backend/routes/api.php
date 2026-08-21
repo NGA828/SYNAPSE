@@ -173,7 +173,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->gr
             ->name('api.admin.import');
 
         Route::apiResource('classes', SchoolClassController::class)->only(['index', 'store']);
-        Route::apiResource('subjects', SubjectController::class)->only(['index', 'store']);
+        Route::apiResource('subjects', SubjectController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('teachers', AdminTeacherController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('students', AdminStudentController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('teaching-assignments', TeachingAssignmentController::class)

@@ -35,7 +35,7 @@ class SettingsController extends Controller
         $data = $request->validate([
             'settings' => ['sometimes', 'array'],
             // White-label branding. `logo` is a base64 data URL (kept small).
-            'logo' => ['nullable', 'string', 'max:500000'],
+            'logo' => ['nullable', 'string', 'max:5000000'],
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],

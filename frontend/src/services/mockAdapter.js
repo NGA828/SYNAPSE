@@ -1055,6 +1055,27 @@ function adminCreateSubject(config) {
   return ok(config, { data: item }, 201)
 }
 
+function adminUpdateSubject(config, match) {
+  const { school } = requireActiveTenant(config)
+  const subject = db.subjects.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
+  if (!subject) throw fail(404, 'Not found.')
+  const body = readBody(config)
+  const errors = validate(body, ['name'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  subject.name = body.name
+  subject.code = body.code ?? null
+  return ok(config, { data: subject })
+}
+
+function adminDeleteSubject(config, match) {
+  const { school } = requireActiveTenant(config)
+  const id = Number(match[1])
+  db.subjects = db.subjects.filter((item) => !(item.id === id && item.school_id === school.id))
+  db.teachingAssignments = db.teachingAssignments.filter((item) => !(item.subject_id === id && item.school_id === school.id))
+  db.timetableEntries = db.timetableEntries.filter((item) => !(item.subject_id === id && item.school_id === school.id))
+  return ok(config, { message: 'Subject removed.' })
+}
+
 function adminListTeachers(config) {
   const { school } = requireActiveTenant(config)
   return ok(config, { data: db.teachers.filter((teacher) => teacher.school_id === school.id).map(serializeTeacher) })
@@ -1586,6 +1607,8 @@ const ROUTES = [
   ['post', /^\/admin\/classes$/, adminCreateClass],
   ['get', /^\/admin\/subjects$/, adminListSubjects],
   ['post', /^\/admin\/subjects$/, adminCreateSubject],
+  ['put', /^\/admin\/subjects\/(\d+)$/, adminUpdateSubject],
+  ['delete', /^\/admin\/subjects\/(\d+)$/, adminDeleteSubject],
   ['get', /^\/admin\/teachers$/, adminListTeachers],
   ['post', /^\/admin\/teachers$/, adminCreateTeacher],
   ['get', /^\/admin\/students$/, adminListStudents],
