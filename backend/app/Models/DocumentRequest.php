@@ -71,6 +71,6 @@ class DocumentRequest extends Model
 
     public function documents(): HasMany
     {
-        return $this->hasMany(Document::class);
+        return $this->hasMany(Document::class, 'request_id');
     }
 }

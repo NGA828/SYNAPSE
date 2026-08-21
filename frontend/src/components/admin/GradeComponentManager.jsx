@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Scale, Trash2 } from 'lucide-react'
+import { Pencil, Scale, Trash2 } from 'lucide-react'
 import { useAsyncList } from '../../hooks/useAsyncList.js'
 import {
   createGradeComponent,
   deleteGradeComponent,
   listGradeComponents,
+  updateGradeComponent,
 } from '../../services/gradeComponentService.js'
 import { listSubjects } from '../../services/adminService.js'
 import { Button } from '../ui/Button.jsx'
@@ -14,6 +15,7 @@ import { Badge } from '../ui/Badge.jsx'
 import { Card, CardBody, CardHeader } from '../ui/Card.jsx'
 import { Spinner } from '../ui/Spinner.jsx'
 import { ErrorDisplay } from '../forms/ErrorDisplay.jsx'
+import { Modal } from '../ui/Modal.jsx'
 
 export function GradeComponentManager() {
   const { data, loading, error, reload } = useAsyncList(listGradeComponents)
@@ -25,6 +27,7 @@ export function GradeComponentManager() {
   const [form, setForm] = useState({ name: '', weight: '', subject_id: '' })
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [editing, setEditing] = useState(null)
 
   const setField = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
 
@@ -48,8 +51,34 @@ export function GradeComponentManager() {
   }
 
   const handleDelete = async (id) => {
-    await deleteGradeComponent(id)
-    await reload()
+    if (!window.confirm('Remove this grading component? Existing scores may also be removed.')) return
+    setFormError(null)
+    try {
+      await deleteGradeComponent(id)
+      await reload()
+    } catch (err) {
+      setFormError(err?.response?.data?.message ?? 'Could not remove the component.')
+    }
+  }
+
+  const handleUpdate = async (event) => {
+    event.preventDefault()
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      await updateGradeComponent(editing.id, {
+        name: form.name,
+        weight: Number(form.weight),
+        subject_id: form.subject_id || null,
+      })
+      setEditing(null)
+      setForm({ name: '', weight: '', subject_id: '' })
+      await reload()
+    } catch (err) {
+      setFormError(err?.response?.data?.message ?? 'Could not update the component.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const totalWeight = defaults.reduce((sum, component) => sum + Number(component.weight), 0)
@@ -67,6 +96,14 @@ export function GradeComponentManager() {
       </div>
       <div className="flex items-center gap-3">
         <Badge variant="violet" dot>{component.weight}%</Badge>
+        <button
+          type="button"
+          onClick={() => { setEditing(component); setForm({ name: component.name, weight: String(component.weight), subject_id: String(component.subject?.id ?? '') }); setFormError(null) }}
+          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Edit component"
+        >
+          <Pencil className="size-4" />
+        </button>
         <button
           type="button"
           onClick={() => handleDelete(component.id)}
@@ -129,6 +166,18 @@ export function GradeComponentManager() {
           </div>
         )}
       </CardBody>
+      <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit grading component" description="Update the component name, weight, or subject.">
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <Input name="edit-name" label="Component" value={form.name} onChange={setField('name')} />
+          <Input name="edit-weight" label="Weight %" type="number" min="0" max="100" value={form.weight} onChange={setField('weight')} />
+          <Select name="edit-subject" label="Subject (optional)" value={form.subject_id} onChange={setField('subject_id')}>
+            <option value="">School-wide default</option>
+            {subjects?.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+          </Select>
+          <ErrorDisplay message={formError} />
+          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button><Button type="submit" loading={submitting}>Save changes</Button></div>
+        </form>
+      </Modal>
     </Card>
   )
 }

@@ -93,7 +93,38 @@ class ExamService
 
     public function create(School $school, array $data): Exam
     {
-        return Exam::create([...$data, 'school_id' => $school->id])->load(['subject', 'schoolClass', 'semester']);
+        $year = AcademicYear::current();
+        abort_unless($year, 409, 'No active academic year is configured.');
+
+        abort_unless(
+            SchoolClass::query()->whereKey($data['class_id'])->where('school_id', $school->id)->exists(),
+            422,
+            'The selected class is invalid.',
+        );
+
+        abort_unless(
+            Subject::query()->whereKey($data['subject_id'])->where('school_id', $school->id)->exists(),
+            422,
+            'The selected subject is invalid.',
+        );
+
+        if (! empty($data['semester_id'])) {
+            abort_unless(
+                Semester::query()
+                    ->whereKey($data['semester_id'])
+                    ->where('school_id', $school->id)
+                    ->where('academic_year_id', $year->id)
+                    ->exists(),
+                422,
+                'The selected semester is invalid.',
+            );
+        }
+
+        return Exam::create([
+            ...$data,
+            'school_id' => $school->id,
+            'academic_year_id' => $year->id,
+        ])->load(['subject', 'schoolClass', 'semester']);
     }
 
     public function delete(Exam $exam): void

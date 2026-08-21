@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { CalendarDays, Check } from 'lucide-react'
+import { CalendarDays, Check, Pencil, Trash2 } from 'lucide-react'
 import { useAsyncList } from '../../hooks/useAsyncList.js'
-import { activateAcademicYear, createAcademicYear, listAcademicYears } from '../../services/adminService.js'
+import { activateAcademicYear, createAcademicYear, deleteAcademicYear, listAcademicYears, updateAcademicYear } from '../../services/adminService.js'
 import { formatDate } from '../../utils/formatters.js'
 import { Button } from '../ui/Button.jsx'
 import { Input } from '../ui/Input.jsx'
@@ -9,6 +9,7 @@ import { Badge } from '../ui/Badge.jsx'
 import { Card, CardBody, CardHeader } from '../ui/Card.jsx'
 import { Spinner } from '../ui/Spinner.jsx'
 import { ErrorDisplay } from '../forms/ErrorDisplay.jsx'
+import { Modal } from '../ui/Modal.jsx'
 
 export function AcademicYearManager() {
   const { data: years, loading, error, reload } = useAsyncList(listAcademicYears)
@@ -17,6 +18,7 @@ export function AcademicYearManager() {
   const [endDate, setEndDate] = useState('')
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [editing, setEditing] = useState(null)
 
   const handleCreate = async (event) => {
     event.preventDefault()
@@ -36,8 +38,53 @@ export function AcademicYearManager() {
   }
 
   const handleActivate = async (id) => {
-    await activateAcademicYear(id)
-    await reload()
+    try {
+      await activateAcademicYear(id)
+      await reload()
+    } catch (err) {
+      setFormError(err?.response?.data?.message ?? 'Could not activate the year.')
+    }
+  }
+
+  const openEdit = (year) => {
+    setEditing(year)
+    setName(year.name)
+    setStartDate(year.start_date?.slice(0, 10) ?? '')
+    setEndDate(year.end_date?.slice(0, 10) ?? '')
+    setFormError(null)
+  }
+
+  const handleUpdate = async (event) => {
+    event.preventDefault()
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      await updateAcademicYear(editing.id, { name, start_date: startDate || null, end_date: endDate || null })
+      setEditing(null)
+      setName('')
+      setStartDate('')
+      setEndDate('')
+      await reload()
+    } catch (err) {
+      setFormError(err?.response?.data?.message ?? 'Could not update the year.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDelete = async (year) => {
+    if (year.is_current) {
+      setFormError('Set another year as current before deleting this year.')
+      return
+    }
+    if (!window.confirm(`Remove academic year ${year.name}? Related academic records may also be removed.`)) return
+    setFormError(null)
+    try {
+      await deleteAcademicYear(year.id)
+      await reload()
+    } catch (err) {
+      setFormError(err?.response?.data?.message ?? 'Could not remove the year.')
+    }
   }
 
   return (
@@ -96,17 +143,36 @@ export function AcademicYearManager() {
                     </p>
                   </div>
                 </div>
-                {!year.is_current ? (
-                  <Button variant="soft" size="sm" onClick={() => handleActivate(year.id)}>
-                    <Check className="size-4" aria-hidden="true" />
-                    Set current
+                <div className="flex items-center gap-1">
+                  {!year.is_current ? (
+                    <Button variant="soft" size="sm" onClick={() => handleActivate(year.id)}>
+                      <Check className="size-4" aria-hidden="true" />
+                      Set current
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" size="sm" title="Edit academic year" onClick={() => openEdit(year)}>
+                    <Pencil className="size-4" aria-hidden="true" />
                   </Button>
-                ) : null}
+                  <Button variant="ghost" size="sm" title="Delete academic year" onClick={() => handleDelete(year)}>
+                    <Trash2 className="size-4 text-rose-600" aria-hidden="true" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </CardBody>
+      <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit academic year" description="Update the year name and date range.">
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <Input label="Academic year" value={name} onChange={(event) => setName(event.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Start date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            <Input label="End date" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+          </div>
+          <ErrorDisplay message={formError} />
+          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button><Button type="submit" loading={submitting}>Save changes</Button></div>
+        </form>
+      </Modal>
     </Card>
   )
 }

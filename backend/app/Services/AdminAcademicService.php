@@ -47,10 +47,24 @@ class AdminAcademicService
      */
     public function activate(AcademicYear $year): AcademicYear
     {
-        AcademicYear::query()->update(['is_current' => false]);
+        AcademicYear::query()->where('school_id', $year->school_id)->update(['is_current' => false]);
         $year->update(['is_current' => true]);
 
         return $year->fresh();
+    }
+
+    public function updateYear(AcademicYear $year, array $data): AcademicYear
+    {
+        $year->update($data);
+
+        return $year->fresh();
+    }
+
+    public function deleteYear(AcademicYear $year): void
+    {
+        abort_unless(! $year->is_current, 422, 'The current academic year cannot be deleted. Set another year as current first.');
+
+        $year->delete();
     }
 
     public function createClass(School $school, array $data): SchoolClass

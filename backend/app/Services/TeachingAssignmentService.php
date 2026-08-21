@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AcademicYear;
+use App\Models\Teacher;
 use App\Models\TeachingAssignment;
 
 class TeachingAssignmentService

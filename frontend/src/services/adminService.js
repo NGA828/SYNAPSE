@@ -20,6 +20,16 @@ export async function createAcademicYear(payload) {
   return data.data
 }
 
+export async function updateAcademicYear(id, payload) {
+  const { data } = await apiClient.put(`/admin/academic-years/${id}`, payload)
+  return data.data
+}
+
+export async function deleteAcademicYear(id) {
+  const { data } = await apiClient.delete(`/admin/academic-years/${id}`)
+  return data
+}
+
 export async function activateAcademicYear(id) {
   const { data } = await apiClient.post(`/admin/academic-years/${id}/activate`)
   return data.data

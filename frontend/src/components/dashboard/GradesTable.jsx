@@ -21,15 +21,29 @@ export function GradesTable({ grades = [] }) {
     )
   }
 
+  const componentColumns = [...new Map(
+    grades.flatMap((grade) => (grade.components ?? []).map((component) => [component.name, component])),
+  ).values()]
+  const usesComponents = componentColumns.length > 0
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[30rem] text-sm">
         <thead>
           <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
             <th className="px-4 py-3 font-semibold">Subject</th>
-            <th className="px-4 py-3 text-right font-semibold">Test 1</th>
-            <th className="px-4 py-3 text-right font-semibold">Test 2</th>
-            <th className="px-4 py-3 text-right font-semibold">Exam</th>
+            {usesComponents ? componentColumns.map((component) => (
+              <th key={component.name} className="px-4 py-3 text-right font-semibold">
+                {component.name}
+                <span className="block text-[10px] font-normal text-slate-300">{component.weight}%</span>
+              </th>
+            )) : (
+              <>
+                <th className="px-4 py-3 text-right font-semibold">Test 1</th>
+                <th className="px-4 py-3 text-right font-semibold">Test 2</th>
+                <th className="px-4 py-3 text-right font-semibold">Exam</th>
+              </>
+            )}
             <th className="px-4 py-3 text-right font-semibold">Average</th>
           </tr>
         </thead>
@@ -50,9 +64,17 @@ export function GradesTable({ grades = [] }) {
                     ) : null}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums text-slate-600">{grade.test1 ?? '—'}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-slate-600">{grade.test2 ?? '—'}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-slate-600">{grade.exam ?? '—'}</td>
+                {usesComponents ? componentColumns.map((component) => (
+                  <td key={component.name} className="px-4 py-3 text-right tabular-nums text-slate-600">
+                    {grade.components?.find((item) => item.name === component.name)?.score ?? '—'}
+                  </td>
+                )) : (
+                  <>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600">{grade.test1 ?? '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600">{grade.test2 ?? '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-600">{grade.exam ?? '—'}</td>
+                  </>
+                )}
                 <td className="px-4 py-3 text-right">
                   <Badge variant={averageVariant(grade.average)} dot>
                     {formatDecimal(grade.average)}

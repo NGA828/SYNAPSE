@@ -60,5 +60,17 @@ export function TenantProvider({ children }) {
     [tenant, loaded, isAuthenticated, isSuperAdmin, load],
   )
 
-  return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>
+  const primaryColor = tenant?.school?.primary_color
+  const tenantStyle = primaryColor
+    ? {
+        '--color-brand-500': primaryColor,
+        '--color-brand-600': primaryColor,
+      }
+    : undefined
+
+  return (
+    <TenantContext.Provider value={value}>
+      <div style={tenantStyle}>{children}</div>
+    </TenantContext.Provider>
+  )
 }

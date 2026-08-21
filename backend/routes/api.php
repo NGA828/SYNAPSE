@@ -156,6 +156,10 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->gr
     // Academic management — subscription enforced.
     Route::middleware('subscription')->group(function () {
         Route::apiResource('academic-years', AcademicYearController::class)->only(['index', 'store']);
+        Route::put('/academic-years/{academicYear}', [AcademicYearController::class, 'update'])
+            ->name('api.admin.academic-years.update');
+        Route::delete('/academic-years/{academicYear}', [AcademicYearController::class, 'destroy'])
+            ->name('api.admin.academic-years.destroy');
         Route::post('/academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate'])
             ->name('api.admin.academic-years.activate');
 
@@ -163,7 +167,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->gr
         Route::post('/semesters/{semester}/activate', [AdminSemesterController::class, 'activate'])
             ->name('api.admin.semesters.activate');
 
-        Route::apiResource('grade-components', AdminGradeComponentController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('grade-components', AdminGradeComponentController::class)->only(['index', 'store']);
+        Route::put('/grade-components/{component}', [AdminGradeComponentController::class, 'update'])
+            ->name('api.admin.grade-components.update');
+        Route::delete('/grade-components/{component}', [AdminGradeComponentController::class, 'destroy'])
+            ->name('api.admin.grade-components.destroy');
 
         Route::apiResource('exams', AdminExamController::class)->only(['index', 'store', 'destroy']);
         Route::get('/exams/ranking', [AdminExamController::class, 'ranking'])

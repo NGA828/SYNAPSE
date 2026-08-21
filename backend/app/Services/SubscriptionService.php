@@ -17,7 +17,8 @@ class SubscriptionService
      */
     public function plan(School $school): ?SubscriptionPlan
     {
-        return $school->subscriptionPlan;
+        return $school->subscriptionPlan
+            ?? $school->subscriptions()->latest()->first()?->plan;
     }
 
     /**

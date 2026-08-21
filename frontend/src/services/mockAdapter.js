@@ -1024,6 +1024,29 @@ function adminActivateYear(config, match) {
   return ok(config, { data: db.academicYears.find((item) => item.id === id) })
 }
 
+function adminUpdateAcademicYear(config, match) {
+  const { school } = requireActiveTenant(config)
+  const year = db.academicYears.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
+  if (!year) throw fail(404, 'Not found.')
+  const body = readBody(config)
+  const errors = validate(body, ['name'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  year.name = body.name
+  year.start_date = body.start_date ?? null
+  year.end_date = body.end_date ?? null
+  return ok(config, { data: year })
+}
+
+function adminDeleteAcademicYear(config, match) {
+  const { school } = requireActiveTenant(config)
+  const id = Number(match[1])
+  const year = db.academicYears.find((item) => item.id === id && item.school_id === school.id)
+  if (!year) throw fail(404, 'Not found.')
+  if (year.is_current) throw fail(422, 'The current academic year cannot be deleted. Set another year as current first.')
+  db.academicYears = db.academicYears.filter((item) => item.id !== id || item.school_id !== school.id)
+  return ok(config, { message: 'Academic year removed.' })
+}
+
 function adminListClasses(config) {
   const { school } = requireActiveTenant(config)
   return ok(config, { data: db.classes.filter((klass) => klass.school_id === school.id).sort((a, b) => a.name.localeCompare(b.name)) })
@@ -1603,6 +1626,8 @@ const ROUTES = [
   ['get', /^\/admin\/academic-years$/, adminListAcademicYears],
   ['post', /^\/admin\/academic-years$/, adminCreateAcademicYear],
   ['post', /^\/admin\/academic-years\/(\d+)\/activate$/, adminActivateYear],
+  ['put', /^\/admin\/academic-years\/(\d+)$/, adminUpdateAcademicYear],
+  ['delete', /^\/admin\/academic-years\/(\d+)$/, adminDeleteAcademicYear],
   ['get', /^\/admin\/classes$/, adminListClasses],
   ['post', /^\/admin\/classes$/, adminCreateClass],
   ['get', /^\/admin\/subjects$/, adminListSubjects],

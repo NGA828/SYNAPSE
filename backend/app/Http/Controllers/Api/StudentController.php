@@ -7,6 +7,7 @@ use App\Models\Student;
 use App\Services\StudentDashboardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class StudentController extends Controller
 {
@@ -27,7 +28,7 @@ class StudentController extends Controller
             'No student profile is attached to this account.'
         );
 
-        $this->authorize('view', $student);
+        Gate::forUser($request->user())->authorize('view', $student);
 
         return response()->json($this->dashboardService->dashboard($student));
     }

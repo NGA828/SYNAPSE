@@ -40,20 +40,25 @@ class GradeService
             $query->where('semester_id', $semester->id);
         }
 
-        $grades = $query->get()->map(fn (Grade $grade) => [
-            'subject' => $grade->subject->name,
-            'subject_code' => $grade->subject->code,
-            'semester_id' => $grade->semester_id,
-            'test1' => $grade->test1,
-            'test2' => $grade->test2,
-            'exam' => $grade->exam,
-            'components' => $grade->scores->map(fn (GradeScore $score) => [
+        $grades = $query->get()->map(function (Grade $grade) {
+            $components = $grade->scores->map(fn (GradeScore $score) => [
                 'name' => $score->component?->name,
                 'weight' => $score->component?->weight,
                 'score' => $score->score,
-            ])->values(),
-            'average' => $grade->average,
-        ]);
+            ])->values();
+            $legacy = $components->isEmpty();
+
+            return [
+                'subject' => $grade->subject->name,
+                'subject_code' => $grade->subject->code,
+                'semester_id' => $grade->semester_id,
+                'test1' => $legacy ? $grade->test1 : null,
+                'test2' => $legacy ? $grade->test2 : null,
+                'exam' => $legacy ? $grade->exam : null,
+                'components' => $components,
+                'average' => $grade->average,
+            ];
+        });
 
         $average = $grades
             ->pluck('average')
