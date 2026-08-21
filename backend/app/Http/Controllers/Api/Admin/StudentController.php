@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreStudentRequest;
+use App\Http\Requests\Admin\UpdateStudentRequest;
 use App\Models\AcademicYear;
 use App\Models\Student;
 use App\Services\RegistrationService;
@@ -55,5 +56,24 @@ class StudentController extends Controller
                 'matricule' => $student->matricule,
             ],
         ], 201);
+    }
+
+    public function update(UpdateStudentRequest $request, Student $student): JsonResponse
+    {
+        $student = $this->registrationService->updateStudent($student, $request->validated(), $request->user());
+
+        return response()->json(['data' => [
+            'id' => $student->id,
+            'name' => $student->user?->name,
+            'email' => $student->user?->email,
+            'matricule' => $student->matricule,
+        ]]);
+    }
+
+    public function destroy(Student $student): JsonResponse
+    {
+        $this->registrationService->deleteStudent($student, request()->user());
+
+        return response()->json(['message' => 'Student removed.']);
     }
 }

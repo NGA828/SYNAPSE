@@ -116,7 +116,7 @@ class DatabaseSeeder extends Seeder
 
     private function seedSuperAdmin(): User
     {
-        return User::firstOrCreate(['email' => 'superadmin@synapse.test'], [
+        return User::updateOrCreate(['email' => 'superadmin@synapse.test'], [
             'school_id' => null,
             'name' => 'Platform Super Admin',
             'password' => Hash::make('password123'),
@@ -355,7 +355,7 @@ class DatabaseSeeder extends Seeder
 
     private function user(School $school, string $name, string $email, string $role): User
     {
-        return User::firstOrCreate(['email' => $email], [
+        return User::updateOrCreate(['email' => $email], [
             'school_id' => $school->id,
             'name' => $name,
             'password' => Hash::make('password123'),

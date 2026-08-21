@@ -7,6 +7,7 @@ import {
   listClasses,
   listSubjects,
   listTimetable,
+  updateTimetableEntry,
 } from '../../services/adminService.js'
 import { TimetableBoard } from '../dashboard/TimetableBoard.jsx'
 import { TimetableEditorModal } from './TimetableEditorModal.jsx'
@@ -42,9 +43,10 @@ export function TimetableManager() {
     setFormError(null)
     try {
       if (modal.mode === 'edit' && modal.entry?.id) {
-        await deleteTimetableEntry(modal.entry.id)
+        await updateTimetableEntry(modal.entry.id, { ...payload, class_id: classId })
+      } else {
+        await createTimetableEntry({ ...payload, class_id: classId })
       }
-      await createTimetableEntry({ ...payload, class_id: classId })
       close()
       await reload()
     } catch (err) {

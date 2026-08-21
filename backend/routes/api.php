@@ -174,13 +174,15 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->gr
 
         Route::apiResource('classes', SchoolClassController::class)->only(['index', 'store']);
         Route::apiResource('subjects', SubjectController::class)->only(['index', 'store']);
-        Route::apiResource('teachers', AdminTeacherController::class)->only(['index', 'store']);
-        Route::apiResource('students', AdminStudentController::class)->only(['index', 'store']);
+        Route::apiResource('teachers', AdminTeacherController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('students', AdminStudentController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('teaching-assignments', TeachingAssignmentController::class)
             ->only(['index', 'store', 'destroy']);
 
         Route::get('/timetable', [AdminTimetableController::class, 'index'])->name('api.admin.timetable');
         Route::post('/timetable/entries', [AdminTimetableController::class, 'store'])->name('api.admin.timetable.store');
+        Route::put('/timetable/entries/{timetableEntry}', [AdminTimetableController::class, 'update'])
+            ->name('api.admin.timetable.update');
         Route::delete('/timetable/entries/{timetableEntry}', [AdminTimetableController::class, 'destroy'])
             ->name('api.admin.timetable.destroy');
 

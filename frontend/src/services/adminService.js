@@ -70,6 +70,11 @@ export async function createTimetableEntry(payload) {
   return data.data
 }
 
+export async function updateTimetableEntry(id, payload) {
+  const { data } = await apiClient.put(`/admin/timetable/entries/${id}`, payload)
+  return data.data
+}
+
 export async function deleteTimetableEntry(id) {
   const { data } = await apiClient.delete(`/admin/timetable/entries/${id}`)
   return data

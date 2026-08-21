@@ -8,6 +8,7 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class RegistrationService
 {
@@ -81,5 +82,60 @@ class RegistrationService
         $this->audit->log($school, $actor, 'student.created', Student::class, $student->id);
 
         return $student->load('user');
+    }
+
+    public function updateTeacher(Teacher $teacher, array $data, ?User $actor = null): Teacher
+    {
+        return DB::transaction(function () use ($teacher, $data, $actor) {
+            $teacher->user->update([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                ...array_key_exists('password', $data) && $data['password'] ? ['password' => $data['password']] : [],
+            ]);
+            $teacher->update(['staff_no' => $data['staff_no'] ?? null]);
+            $this->audit->log($teacher->school, $actor, 'teacher.updated', Teacher::class, $teacher->id);
+
+            return $teacher->fresh('user');
+        });
+    }
+
+    public function updateStudent(Student $student, array $data, ?User $actor = null): Student
+    {
+        return DB::transaction(function () use ($student, $data, $actor) {
+            $student->user->update([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                ...array_key_exists('password', $data) && $data['password'] ? ['password' => $data['password']] : [],
+            ]);
+            $student->update(['matricule' => $data['matricule']]);
+
+            $yearId = $data['academic_year_id'] ?? AcademicYear::current()?->id;
+            if ($yearId) {
+                Enrollment::updateOrCreate(
+                    ['student_id' => $student->id, 'academic_year_id' => $yearId],
+                    ['school_id' => $student->school_id, 'class_id' => $data['class_id']],
+                );
+            }
+
+            $this->audit->log($student->school, $actor, 'student.updated', Student::class, $student->id);
+
+            return $student->fresh('user');
+        });
+    }
+
+    public function deleteTeacher(Teacher $teacher, ?User $actor = null): void
+    {
+        DB::transaction(function () use ($teacher, $actor) {
+            $this->audit->log($teacher->school, $actor, 'teacher.deleted', Teacher::class, $teacher->id);
+            $teacher->user->delete();
+        });
+    }
+
+    public function deleteStudent(Student $student, ?User $actor = null): void
+    {
+        DB::transaction(function () use ($student, $actor) {
+            $this->audit->log($student->school, $actor, 'student.deleted', Student::class, $student->id);
+            $student->user->delete();
+        });
     }
 }

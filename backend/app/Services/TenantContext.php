@@ -26,7 +26,7 @@ class TenantContext
         return $this->school;
     }
 
-    public function id(): ?int
+    public function schoolId(): ?int
     {
         return $this->school?->id;
     }
@@ -54,6 +54,6 @@ class TenantContext
 
     public static function id(): ?int
     {
-        return app(self::class)->id();
+        return app(self::class)->schoolId();
     }
 }
