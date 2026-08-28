@@ -4,9 +4,13 @@ import apiClient from './apiClient.js'
  * Administrator endpoints for registering students and teachers.
  */
 
-export async function listTeachers() {
-  const { data } = await apiClient.get('/admin/teachers')
-  return data.data
+/**
+ * Paginated teacher directory. Returns the full `{ data, meta, links }`
+ * envelope so callers can render page controls.
+ */
+export async function listTeachers(params = {}) {
+  const { data } = await apiClient.get('/admin/teachers', { params })
+  return data
 }
 
 export async function createTeacher(payload) {
@@ -24,9 +28,12 @@ export async function deleteTeacher(id) {
   return data
 }
 
-export async function listStudents() {
-  const { data } = await apiClient.get('/admin/students')
-  return data.data
+/**
+ * Paginated, searchable student directory (`{ data, meta, links }`).
+ */
+export async function listStudents(params = {}) {
+  const { data } = await apiClient.get('/admin/students', { params })
+  return data
 }
 
 export async function createStudent(payload) {

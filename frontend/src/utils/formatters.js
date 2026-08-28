@@ -40,3 +40,16 @@ export function formatDate(value, options) {
   const defaults = { year: 'numeric', month: 'short', day: 'numeric' }
   return new Intl.DateTimeFormat('en-US', options ?? defaults).format(date)
 }
+
+/**
+ * Date + time, used for audit trails and session lists.
+ */
+export function formatDateTime(value) {
+  return formatDate(value, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}

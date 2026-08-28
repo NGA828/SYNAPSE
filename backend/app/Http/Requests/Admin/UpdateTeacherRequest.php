@@ -20,6 +20,7 @@ class UpdateTeacherRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($teacher?->user_id)],
             'password' => ['nullable', 'string', 'min:8'],
+            'phone' => ['nullable', 'string', 'max:32'],
             'staff_no' => ['nullable', 'string', 'max:50', Rule::unique('teachers', 'staff_no')->ignore($teacher?->id)],
         ];
     }

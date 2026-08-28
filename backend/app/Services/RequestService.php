@@ -4,6 +4,10 @@ namespace App\Services;
 
 use App\Models\DocumentRequest;
 use App\Models\Student;
+use App\Models\User;
+use App\Notifications\DocumentReadyNotification;
+use App\Notifications\RequestStatusChangedNotification;
+use App\Notifications\RequestSubmittedNotification;
 use Illuminate\Support\Collection;
 
 class RequestService
@@ -27,12 +31,10 @@ class RequestService
             'status' => DocumentRequest::STATUS_SUBMITTED,
         ]);
 
-        $this->notifications->sendToRole(
-            'admin',
-            'request_created',
-            'New request',
-            "{$student->user?->name} submitted a \"{$request->type}\" request.",
-            ['request_id' => $request->id],
+        $this->notifications->notifyRole(
+            $student->school_id,
+            User::ROLE_ADMIN,
+            new RequestSubmittedNotification($request, $student->user?->name ?? 'A student'),
         );
 
         return $request->load('documents');
@@ -49,19 +51,6 @@ class RequestService
     }
 
     /**
-     * All requests (admin), with student details.
-     *
-     * @return Collection<int, DocumentRequest>
-     */
-    public function all(): Collection
-    {
-        return DocumentRequest::query()
-            ->with(['student.user', 'documents'])
-            ->latest()
-            ->get();
-    }
-
-    /**
      * Move a request through its lifecycle and notify the student.
      */
     public function transition(DocumentRequest $request, string $status, ?string $note = null): DocumentRequest
@@ -75,23 +64,10 @@ class RequestService
             ], true) ? now() : $request->resolved_at,
         ]);
 
-        $message = match ($status) {
-            DocumentRequest::STATUS_UNDER_REVIEW => "Your request {$request->reference} is now under review.",
-            DocumentRequest::STATUS_APPROVED => "Your request {$request->reference} has been approved.",
-            DocumentRequest::STATUS_READY => "Your request {$request->reference} is ready to download.",
-            DocumentRequest::STATUS_REJECTED => "Your request {$request->reference} was declined.",
-            default => "Your request {$request->reference} was updated.",
-        };
-
-        if ($request->student?->user) {
-            $this->notifications->send(
-                $request->student->user,
-                'request_updated',
-                'Request update',
-                $message,
-                ['request_id' => $request->id, 'status' => $status],
-            );
-        }
+        $this->notifications->notify(
+            $request->student?->user,
+            new RequestStatusChangedNotification($request, $status),
+        );
 
         return $request->load('documents');
     }
@@ -99,11 +75,18 @@ class RequestService
     /**
      * Generate the document, mark the request ready, notify the student.
      */
-    public function generateDocument(DocumentRequest $request): DocumentRequest
+    public function generateDocument(DocumentRequest $request, ?User $actor = null): DocumentRequest
     {
-        $this->documents->generateForRequest($request);
+        $document = $this->documents->generateForRequest($request, $actor);
 
-        return $this->transition($request, DocumentRequest::STATUS_READY);
+        $request = $this->transition($request, DocumentRequest::STATUS_READY);
+
+        $this->notifications->notify(
+            $request->student?->user,
+            new DocumentReadyNotification($document),
+        );
+
+        return $request;
     }
 
     /**

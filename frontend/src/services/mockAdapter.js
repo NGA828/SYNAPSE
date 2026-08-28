@@ -63,6 +63,97 @@ const failSubscription = () => {
   return error
 }
 
+/**
+ * Mirrors App\Http\Concerns\HandlesPagination: bounded page size, LIKE
+ * search across the given fields, and the Laravel `{data, meta, links}`
+ * envelope so the SPA behaves identically with and without the real API.
+ */
+const paginate = (config, rows, searchable = []) => {
+  const params = config.params ?? {}
+  const term = String(params.search ?? '').trim().toLowerCase()
+
+  const filtered = term
+    ? rows.filter((row) =>
+        searchable.some((field) => String(row?.[field] ?? '').toLowerCase().includes(term)),
+      )
+    : rows
+
+  const perPage = Math.min(Math.max(Number(params.per_page) || 15, 1), 100)
+  const lastPage = Math.max(Math.ceil(filtered.length / perPage), 1)
+  const page = Math.min(Math.max(Number(params.page) || 1, 1), lastPage)
+  const start = (page - 1) * perPage
+  const data = filtered.slice(start, start + perPage)
+
+  return {
+    data,
+    links: { first: '?page=1', last: `?page=${lastPage}`, prev: null, next: null },
+    meta: {
+      current_page: page,
+      from: filtered.length ? start + 1 : null,
+      last_page: lastPage,
+      per_page: perPage,
+      to: filtered.length ? start + data.length : null,
+      total: filtered.length,
+    },
+  }
+}
+
+/**
+ * Builds a genuinely valid single-page PDF (correct header, xref table and
+ * trailer) so "Download PDF" produces a file that really opens in mock mode.
+ */
+const mockPdf = (lines) => {
+  const encoder = new TextEncoder()
+  const byteLength = (text) => encoder.encode(text).length
+
+  // WinAnsi-safe: fold the few typographic characters used by the UI to ASCII.
+  const clean = (text) =>
+    String(text)
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[^\x20-\x7E]/g, '?')
+      .replace(/([\\()])/g, '\\$1')
+
+  const body = lines
+    .map((line, index) => `BT /F1 ${index === 0 ? 16 : 11} Tf 60 ${760 - index * 22} Td (${clean(line)}) Tj ET`)
+    .join('\n')
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${byteLength(body)} >>\nstream\n${body}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ]
+
+  let pdf = '%PDF-1.4\n'
+  const offsets = []
+
+  objects.forEach((object, index) => {
+    offsets.push(byteLength(pdf))
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+
+  const xrefOffset = byteLength(pdf)
+
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  pdf += offsets.map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+
+  return new Blob([pdf], { type: 'application/pdf' })
+}
+
+const pdfResponse = (config, filename, lines) => ({
+  data: mockPdf(lines),
+  status: 200,
+  statusText: 'OK',
+  headers: { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${filename}"` },
+  config,
+})
+
+const resetTokens = new Map()
+
 const readBody = (config) => {
   try {
     return typeof config.data === 'string' ? JSON.parse(config.data) : (config.data ?? {})
@@ -387,7 +478,12 @@ function login(config) {
   }
   const token = `mock-token-${user.id}-${Math.random().toString(36).slice(2)}`
   tokens.set(token, user.id)
-  return ok(config, { token, user: publicUser(user) })
+  user.last_login_at = new Date().toISOString()
+  return ok(config, {
+    token,
+    user: publicUser(user),
+    must_change_password: Boolean(user.must_change_password),
+  })
 }
 
 function logout(config) {
@@ -675,6 +771,74 @@ function teacherDashboard(config) {
       classes: new Set(assignments.map((assignment) => assignment.class.id)).size,
     },
     assignments,
+  })
+}
+
+const minutesBetween = (start, end) => {
+  const [startHour, startMinute] = String(start).split(':').map(Number)
+  const [endHour, endMinute] = String(end).split(':').map(Number)
+  return Math.max(endHour * 60 + endMinute - (startHour * 60 + startMinute), 0)
+}
+
+function teacherTimetable(config) {
+  const { user, school } = requireActiveTenant(config)
+  const teacher = teacherForUser(user.id, school.id)
+  if (!teacher) throw fail(403, 'No teacher profile is attached to this account.')
+
+  const year = currentYearFor(school.id)
+  const pairs = new Set(
+    db.teachingAssignments
+      .filter((assignment) => assignment.teacher_id === teacher.id && assignment.academic_year_id === year?.id)
+      .map((assignment) => `${assignment.class_id}:${assignment.subject_id}`),
+  )
+
+  const entries = db.timetableEntries
+    .filter((entry) => entry.school_id === school.id && entry.academic_year_id === year?.id)
+    .filter((entry) => pairs.has(`${entry.class_id}:${entry.subject_id}`))
+    .sort((a, b) => a.day - b.day || a.start.localeCompare(b.start))
+    .map((entry) => ({
+      id: entry.id,
+      day: Number(entry.day),
+      start: entry.start,
+      end: entry.end,
+      duration_minutes: minutesBetween(entry.start, entry.end),
+      subject: { id: entry.subject_id, name: byId(db.subjects, entry.subject_id)?.name },
+      class: { id: entry.class_id, name: byId(db.classes, entry.class_id)?.name },
+    }))
+
+  const minutes = entries.reduce((total, entry) => total + entry.duration_minutes, 0)
+  const perDay = entries.reduce((acc, entry) => ({ ...acc, [entry.day]: (acc[entry.day] ?? 0) + 1 }), {})
+  const busiest = Object.entries(perDay).sort((a, b) => b[1] - a[1])[0]
+
+  const now = new Date()
+  const isoToday = now.getDay() === 0 ? 7 : now.getDay()
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+  const conflicts = Object.values(
+    entries.reduce((acc, entry) => {
+      const key = `${entry.day}|${entry.start}`
+      ;(acc[key] ??= { day: entry.day, start: entry.start, entries: [] }).entries.push(entry)
+      return acc
+    }, {}),
+  ).filter((group) => group.entries.length > 1)
+
+  return ok(config, {
+    academic_year: year,
+    entries,
+    summary: {
+      lessons: entries.length,
+      classes: new Set(entries.map((entry) => entry.class.id)).size,
+      subjects: new Set(entries.map((entry) => entry.subject.id)).size,
+      minutes_per_week: minutes,
+      hours_per_week: Math.round((minutes / 60) * 10) / 10,
+      busiest_day: busiest ? Number(busiest[0]) : null,
+    },
+    today: entries.filter((entry) => entry.day === isoToday),
+    next:
+      entries.find((entry) => entry.day > isoToday || (entry.day === isoToday && entry.start > time)) ??
+      entries[0] ??
+      null,
+    conflicts,
   })
 }
 
@@ -1101,7 +1265,8 @@ function adminDeleteSubject(config, match) {
 
 function adminListTeachers(config) {
   const { school } = requireActiveTenant(config)
-  return ok(config, { data: db.teachers.filter((teacher) => teacher.school_id === school.id).map(serializeTeacher) })
+  const rows = db.teachers.filter((teacher) => teacher.school_id === school.id).map(serializeTeacher)
+  return ok(config, paginate(config, rows, ['name', 'email', 'staff_no']))
 }
 
 function adminCreateTeacher(config) {
@@ -1119,7 +1284,8 @@ function adminCreateTeacher(config) {
 
 function adminListStudents(config) {
   const { school } = requireActiveTenant(config)
-  return ok(config, { data: db.students.filter((student) => student.school_id === school.id).map(serializeStudent) })
+  const rows = db.students.filter((student) => student.school_id === school.id).map(serializeStudent)
+  return ok(config, paginate(config, rows, ['name', 'email', 'matricule']))
 }
 
 function adminCreateStudent(config) {
@@ -1195,7 +1361,13 @@ function adminDeleteTimetableEntry(config, match) {
 
 function adminListRequests(config) {
   const { school } = requireActiveTenant(config)
-  return ok(config, { data: db.requests.filter((request) => request.school_id === school.id).map(serializeAdminRequest).sort((a, b) => b.id - a.id) })
+  const status = config.params?.status
+  const rows = db.requests
+    .filter((request) => request.school_id === school.id)
+    .filter((request) => !status || request.status === status)
+    .map(serializeAdminRequest)
+    .sort((a, b) => b.id - a.id)
+  return ok(config, paginate(config, rows, ['reference', 'type']))
 }
 
 function notifyStudentAboutRequest(schoolId, studentId, request, status) {
@@ -1571,6 +1743,249 @@ function adminImport(config) {
 // Route table
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Phase 5: password lifecycle, profile, PDFs, verification, audit trail
+// ---------------------------------------------------------------------------
+
+function forgotPassword(config) {
+  const body = readBody(config)
+  const user = db.users.find((candidate) => candidate.email === body.email)
+
+  // Same answer either way — never leak whether an account exists.
+  if (user) {
+    const token = `mock-reset-${Math.random().toString(36).slice(2)}`
+    resetTokens.set(token, user.id)
+    // Surface the link in the console so it is usable in mock mode.
+    console.info(`[SYNAPSE mock] reset link: /reset-password?token=${token}&email=${encodeURIComponent(user.email)}`)
+  }
+
+  return ok(config, { message: 'If that address belongs to an account, a reset link is on its way.' })
+}
+
+function resetPassword(config) {
+  const body = readBody(config)
+  const userId = resetTokens.get(body.token)
+  const user = db.users.find((candidate) => candidate.id === userId && candidate.email === body.email)
+
+  if (!user) {
+    throw fail(422, 'The given data was invalid.', { email: ['This password reset link is invalid or has expired.'] })
+  }
+
+  if (!body.password || body.password.length < 8) {
+    throw fail(422, 'The given data was invalid.', { password: ['The password must be at least 8 characters.'] })
+  }
+
+  user.password = body.password
+  user.must_change_password = false
+  resetTokens.delete(body.token)
+
+  return ok(config, { message: 'Your password has been reset. You can now sign in.' })
+}
+
+function changePassword(config) {
+  const user = authUser(config)
+  const body = readBody(config)
+
+  if (user.password !== body.current_password) {
+    throw fail(422, 'The given data was invalid.', { current_password: ['Your current password is incorrect.'] })
+  }
+
+  if (!body.password || body.password.length < 8) {
+    throw fail(422, 'The given data was invalid.', { password: ['The password must be at least 8 characters.'] })
+  }
+
+  user.password = body.password
+  user.must_change_password = false
+
+  return ok(config, { message: 'Your password has been updated.', user: publicUser(user) })
+}
+
+function showProfile(config) {
+  const user = authUser(config)
+
+  return ok(config, {
+    data: publicUser(user),
+    sessions: [{ id: 1, name: 'This device', last_used_at: new Date().toISOString(), created_at: user.last_login_at ?? null }],
+  })
+}
+
+function updateProfile(config) {
+  const user = authUser(config)
+  const body = readBody(config)
+
+  for (const field of ['name', 'email', 'phone', 'locale', 'notify_email', 'notify_sms']) {
+    if (body[field] !== undefined) user[field] = body[field]
+  }
+
+  return ok(config, { message: 'Profile updated.', data: publicUser(user) })
+}
+
+function signOutOthers(config) {
+  authUser(config)
+  return ok(config, { message: 'All other sessions have been signed out.' })
+}
+
+function verifyDocumentCode(config, match) {
+  const code = decodeURIComponent(match[1]).toUpperCase()
+  const document = db.documents.find((item) => (item.verification_code ?? '').toUpperCase() === code)
+
+  if (!document) {
+    throw fail(404, 'No document matches this verification code.')
+  }
+
+  const student = db.students.find((item) => item.id === document.student_id)
+
+  return ok(config, {
+    valid: true,
+    title: document.title,
+    type: document.type ?? 'certificate',
+    issued_on: (document.created_at ?? new Date().toISOString()).slice(0, 10),
+    issued_to: userName(student?.user_id),
+    matricule: student?.matricule ?? null,
+    school: db.schools.find((item) => item.id === document.school_id)?.name ?? null,
+    verification_code: document.verification_code,
+  })
+}
+
+function reportCardLines(student, school) {
+  const grades = db.grades.filter((grade) => grade.student_id === student?.id)
+  const averages = grades.map((grade) => weightedAverageOf(grade)).filter((value) => value !== null)
+  const average = averages.length ? averages.reduce((sum, value) => sum + value, 0) / averages.length : null
+
+  return [
+    `${school?.name ?? 'SYNAPSE'} — Report Card`,
+    `Student: ${userName(student?.user_id)}`,
+    `Matricule: ${student?.matricule ?? '—'}`,
+    `Class: ${classOfStudent(student?.id, student?.school_id)?.name ?? '—'}`,
+    `Subjects graded: ${grades.length}`,
+    `Overall average: ${average === null ? '—' : average.toFixed(2)} / 20`,
+    'Generated in SYNAPSE mock mode.',
+  ]
+}
+
+function studentReportCardPdf(config) {
+  const { user, school } = requireActiveTenant(config)
+  const student = studentForUser(user.id, school.id)
+  return pdfResponse(config, 'report-card.pdf', reportCardLines(student, school))
+}
+
+function studentTranscriptPdf(config) {
+  const { user, school } = requireActiveTenant(config)
+  const student = studentForUser(user.id, school.id)
+  return pdfResponse(config, 'transcript.pdf', [
+    `${school?.name ?? 'SYNAPSE'} — Academic Transcript`,
+    `Student: ${userName(student?.user_id)}`,
+    `Matricule: ${student?.matricule ?? '—'}`,
+    'Generated in SYNAPSE mock mode.',
+  ])
+}
+
+function adminStudentReportCardPdf(config, match) {
+  const { school } = requireActiveTenant(config)
+  const student = db.students.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
+  if (!student) throw fail(404, 'Not found.')
+  return pdfResponse(config, `report-card-${student.id}.pdf`, reportCardLines(student, school))
+}
+
+function adminStudentTranscriptPdf(config, match) {
+  const { school } = requireActiveTenant(config)
+  const student = db.students.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
+  if (!student) throw fail(404, 'Not found.')
+  return pdfResponse(config, `transcript-${student.id}.pdf`, [
+    `${school?.name ?? 'SYNAPSE'} — Academic Transcript`,
+    `Student: ${userName(student.user_id)}`,
+    `Matricule: ${student.matricule}`,
+    'Generated in SYNAPSE mock mode.',
+  ])
+}
+
+function adminClassReportCards(config, match) {
+  const { school } = requireActiveTenant(config)
+  const klass = db.classes.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
+  if (!klass) throw fail(404, 'Not found.')
+
+  return ok(
+    config,
+    {
+      message: 'Report cards are being generated. Students will be notified as each one is ready.',
+      class: klass.name,
+    },
+    202,
+  )
+}
+
+function adminPaymentReceiptPdf(config, match) {
+  const { school } = requireActiveTenant(config)
+  const payment = db.payments.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
+  if (!payment) throw fail(404, 'Not found.')
+
+  return pdfResponse(config, `receipt-${payment.reference}.pdf`, [
+    `${school?.name ?? 'SYNAPSE'} — Payment Receipt`,
+    `Reference: ${payment.reference}`,
+    `Amount: ${payment.amount} ${payment.currency}`,
+    `Status: ${String(payment.status).toUpperCase()}`,
+    'Generated in SYNAPSE mock mode.',
+  ])
+}
+
+function adminAuditLogs(config) {
+  const { school } = requireActiveTenant(config)
+  const rows = (db.auditLogs ?? [])
+    .filter((entry) => entry.school_id === school.id)
+    .map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      entity_type: String(entry.entity_type ?? '').split('\\').pop(),
+      entity_id: entry.entity_id,
+      metadata: entry.metadata ?? {},
+      created_at: entry.created_at,
+      user: entry.user_id
+        ? {
+            id: entry.user_id,
+            name: userName(entry.user_id),
+            role: db.users.find((user) => user.id === entry.user_id)?.role,
+          }
+        : null,
+    }))
+    .sort((a, b) => b.id - a.id)
+
+  return ok(config, paginate(config, rows, ['action', 'entity_type']))
+}
+
+function superAdminAuditLogs(config) {
+  requireRole(config, 'super_admin')
+  const schoolId = Number(config.params?.school_id) || null
+  const rows = (db.auditLogs ?? [])
+    .filter((entry) => !schoolId || entry.school_id === schoolId)
+    .map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      entity_type: String(entry.entity_type ?? '').split('\\').pop(),
+      entity_id: entry.entity_id,
+      metadata: entry.metadata ?? {},
+      created_at: entry.created_at,
+      school: db.schools.find((school) => school.id === entry.school_id)?.name ?? null,
+      user: entry.user_id ? { id: entry.user_id, name: userName(entry.user_id) } : null,
+    }))
+    .sort((a, b) => b.id - a.id)
+
+  return ok(config, paginate(config, rows, ['action', 'entity_type', 'school']))
+}
+
+function superAdminPaymentReceiptPdf(config, match) {
+  requireRole(config, 'super_admin')
+  const payment = db.payments.find((item) => item.id === Number(match[1]))
+  if (!payment) throw fail(404, 'Not found.')
+
+  return pdfResponse(config, `receipt-${payment.reference}.pdf`, [
+    'SYNAPSE — Payment Receipt',
+    `Reference: ${payment.reference}`,
+    `School: ${db.schools.find((school) => school.id === payment.school_id)?.name ?? '—'}`,
+    `Amount: ${payment.amount} ${payment.currency}`,
+    `Status: ${String(payment.status).toUpperCase()}`,
+  ])
+}
+
 const ROUTES = [
   ['post', /^\/login$/, login],
   ['post', /^\/logout$/, logout],
@@ -1659,6 +2074,23 @@ const ROUTES = [
   ['put', /^\/super-admin\/plans\/(\d+)$/, superAdminUpdatePlan],
   ['get', /^\/super-admin\/subscriptions$/, superAdminListSubscriptions],
   ['get', /^\/super-admin\/payments$/, superAdminListPayments],
+  ['post', /^\/forgot-password$/, forgotPassword],
+  ['post', /^\/reset-password$/, resetPassword],
+  ['post', /^\/password$/, changePassword],
+  ['get', /^\/profile$/, showProfile],
+  ['patch', /^\/profile$/, updateProfile],
+  ['post', /^\/profile\/sign-out-others$/, signOutOthers],
+  ['get', /^\/verify\/([^/]+)$/, verifyDocumentCode],
+  ['get', /^\/student\/report-card\/pdf$/, studentReportCardPdf],
+  ['get', /^\/student\/transcript\/pdf$/, studentTranscriptPdf],
+  ['get', /^\/admin\/students\/(\d+)\/report-card$/, adminStudentReportCardPdf],
+  ['get', /^\/admin\/students\/(\d+)\/transcript$/, adminStudentTranscriptPdf],
+  ['post', /^\/admin\/classes\/(\d+)\/report-cards$/, adminClassReportCards],
+  ['get', /^\/admin\/payments\/(\d+)\/receipt$/, adminPaymentReceiptPdf],
+  ['get', /^\/admin\/audit-logs$/, adminAuditLogs],
+  ['get', /^\/teacher\/timetable$/, teacherTimetable],
+  ['get', /^\/super-admin\/audit-logs$/, superAdminAuditLogs],
+  ['get', /^\/super-admin\/payments\/(\d+)\/receipt$/, superAdminPaymentReceiptPdf],
 ]
 
 export function installMockAdapter(client) {
@@ -1668,8 +2100,10 @@ export function installMockAdapter(client) {
     const base = client.defaults.baseURL ?? ''
     const rawUrl = String(config.url ?? '').replace(base, '')
     const [path, queryString] = rawUrl.split('?')
-    const params = Object.fromEntries(new URLSearchParams(queryString ?? ''))
-    config.params = params
+    // Axios only serialises `config.params` inside its own adapters, so merge
+    // both sources here: an explicit params object wins over the query string.
+    const query = Object.fromEntries(new URLSearchParams(queryString ?? ''))
+    config.params = { ...query, ...(config.params ?? {}) }
 
     const method = String(config.method ?? 'get').toLowerCase()
 

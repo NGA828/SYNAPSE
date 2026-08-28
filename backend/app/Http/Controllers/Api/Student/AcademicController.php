@@ -9,9 +9,11 @@ use App\Models\Student;
 use App\Services\ExamService;
 use App\Services\GradeService;
 use App\Services\TimetableService;
+use App\Services\DocumentService;
 use App\Services\TranscriptService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AcademicController extends Controller
 {
@@ -20,6 +22,7 @@ class AcademicController extends Controller
         private readonly TimetableService $timetableService,
         private readonly TranscriptService $transcriptService,
         private readonly ExamService $examService,
+        private readonly DocumentService $documents,
     ) {}
 
     /**
@@ -53,6 +56,30 @@ class AcademicController extends Controller
         return response()->json(
             $this->gradeService->reportCard($student, null, $semester),
         );
+    }
+
+    /**
+     * Download the report card as a real PDF (also filed under Documents).
+     */
+    public function reportCardPdf(Request $request): StreamedResponse
+    {
+        $student = $this->student($request);
+
+        $document = $this->documents->generateReportCard($student, $this->semester($request));
+
+        return $this->documents->download($document);
+    }
+
+    /**
+     * Download the full transcript as a PDF.
+     */
+    public function transcriptPdf(Request $request): StreamedResponse
+    {
+        $student = $this->student($request);
+
+        $document = $this->documents->generateTranscript($student);
+
+        return $this->documents->download($document);
     }
 
     /**

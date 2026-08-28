@@ -160,6 +160,11 @@
   .animate-glow {
     animation: glow 3.5s ease-in-out infinite;
   }
+
+  /* Ken Burns drift for background slideshow slides */
+  .animate-slow-zoom {
+    animation: slow-zoom 12s ease-out forwards;
+  }
 }
 
 @keyframes fade-in {
@@ -233,6 +238,15 @@
   }
 }
 
+@keyframes slow-zoom {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal,
   .reveal.reveal-left,
@@ -250,6 +264,7 @@
   .animate-aurora,
   .animate-aurora-slow,
   .animate-glow,
+  .animate-slow-zoom,
   .marquee-track {
     animation: none !important;
   }

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
-import { useAsyncList } from '../../hooks/useAsyncList.js'
+import { usePaginatedList } from '../../hooks/usePaginatedList.js'
 import { createTeacher, deleteTeacher, listTeachers, updateTeacher } from '../../services/registrationService.js'
+import { Pagination } from '../ui/Pagination.jsx'
+import { SearchInput } from '../ui/SearchInput.jsx'
 import { Button } from '../ui/Button.jsx'
 import { Input } from '../ui/Input.jsx'
 import { Badge } from '../ui/Badge.jsx'
@@ -11,10 +13,20 @@ import { Avatar } from '../ui/Avatar.jsx'
 import { ErrorDisplay } from '../forms/ErrorDisplay.jsx'
 import { Modal } from '../ui/Modal.jsx'
 
-const EMPTY = { name: '', email: '', password: '', staff_no: '' }
+const EMPTY = { name: '', email: '', phone: '', staff_no: '' }
 
 export function TeacherManager() {
-  const { data: teachers, loading, error, reload } = useAsyncList(listTeachers)
+  const {
+    rows: teachers,
+    meta,
+    page,
+    setPage,
+    search,
+    setSearch,
+    loading,
+    error,
+    reload,
+  } = usePaginatedList(listTeachers, { perPage: 15 })
   const [form, setForm] = useState(EMPTY)
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -27,7 +39,7 @@ export function TeacherManager() {
     setSubmitting(true)
     setFormError(null)
     try {
-      await createTeacher(form)
+      await createTeacher({ ...form, phone: form.phone || undefined })
       setForm(EMPTY)
       await reload()
     } catch (err) {
@@ -42,7 +54,7 @@ export function TeacherManager() {
     setSubmitting(true)
     setFormError(null)
     try {
-      await updateTeacher(editing.id, { ...form, password: form.password || undefined })
+      await updateTeacher(editing.id, { ...form, phone: form.phone || undefined })
       setEditing(null)
       setForm(EMPTY)
       await reload()
@@ -88,7 +100,7 @@ export function TeacherManager() {
       align: 'right',
       render: (teacher) => (
         <span className="flex justify-end gap-1">
-          <Button size="sm" variant="ghost" title="Edit teacher" onClick={() => { setEditing(teacher); setForm({ name: teacher.name ?? '', email: teacher.email ?? '', password: '', staff_no: teacher.staff_no ?? '' }) }}>
+          <Button size="sm" variant="ghost" title="Edit teacher" onClick={() => { setEditing(teacher); setForm({ name: teacher.name ?? '', email: teacher.email ?? '', phone: teacher.phone ?? '', staff_no: teacher.staff_no ?? '' }) }}>
             <Pencil className="size-4" aria-hidden="true" />
           </Button>
           <Button size="sm" variant="ghost" title="Delete teacher" onClick={() => handleDelete(teacher)}>
@@ -106,14 +118,22 @@ export function TeacherManager() {
         <form onSubmit={handleCreate} className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Input name="name" label="Full name" placeholder="Jane Doe" value={form.name} onChange={setField('name')} />
           <Input name="email" label="Email" placeholder="jane@school.edu" value={form.email} onChange={setField('email')} />
-          <Input name="password" label="Password" placeholder="min 8 chars" value={form.password} onChange={setField('password')} />
+          <Input name="phone" label="Phone (SMS)" placeholder="+237 6XX XXX XXX" value={form.phone} onChange={setField('phone')} />
           <Input name="staff_no" label="Staff no." placeholder="TCH-003" value={form.staff_no} onChange={setField('staff_no')} />
         </form>
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <Button onClick={handleCreate} loading={submitting}>
             Add teacher
           </Button>
+          <p className="text-xs text-slate-500">
+            A one-time password is generated and sent to the teacher by e-mail and SMS.
+          </p>
           <ErrorDisplay message={formError} />
+        </div>
+
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search name, e-mail or staff no…" className="max-w-xs" />
+          {meta ? <span className="text-xs text-slate-500">{meta.total} teacher(s)</span> : null}
         </div>
 
         <DataTable
@@ -123,13 +143,14 @@ export function TeacherManager() {
           emptyTitle="No teachers yet"
           emptyDescription="Register your first teacher to get started."
         />
+        <Pagination meta={meta} page={page} onPageChange={setPage} />
         {error ? <p className="mt-3 text-sm text-slate-500">Could not load teachers.</p> : null}
       </CardBody>
       <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit teacher" description="Update the teacher account and staff number.">
         <form onSubmit={handleUpdate} className="space-y-4">
           <Input label="Full name" value={form.name} onChange={setField('name')} />
           <Input label="Email" type="email" value={form.email} onChange={setField('email')} />
-          <Input label="New password" type="password" placeholder="Leave blank to keep current" value={form.password} onChange={setField('password')} />
+          <Input label="Phone (SMS)" placeholder="+237 6XX XXX XXX" value={form.phone} onChange={setField('phone')} />
           <Input label="Staff no." value={form.staff_no} onChange={setField('staff_no')} />
           <ErrorDisplay message={formError} />
           <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button><Button type="submit" loading={submitting}>Save changes</Button></div>

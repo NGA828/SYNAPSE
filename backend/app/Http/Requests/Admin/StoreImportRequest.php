@@ -25,6 +25,7 @@ class StoreImportRequest extends FormRequest
             'rows.*.staff_no' => ['nullable', 'string', 'max:50'],
             'rows.*.class_id' => ['nullable', 'integer', 'exists:classes,id'],
             'rows.*.password' => ['nullable', 'string', 'min:8'],
+            'rows.*.phone' => ['nullable', 'string', 'max:32'],
         ];
     }
 }

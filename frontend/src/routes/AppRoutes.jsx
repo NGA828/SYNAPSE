@@ -2,6 +2,12 @@ import { Route, Routes } from 'react-router-dom'
 import LandingPage from '../pages/LandingPage.jsx'
 import LoginPage from '../pages/auth/LoginPage.jsx'
 import RegisterPage from '../pages/auth/RegisterPage.jsx'
+import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.jsx'
+import ResetPasswordPage from '../pages/auth/ResetPasswordPage.jsx'
+import ChangePasswordPage from '../pages/auth/ChangePasswordPage.jsx'
+import ProfilePage from '../pages/account/ProfilePage.jsx'
+import VerifyDocumentPage from '../pages/public/VerifyDocumentPage.jsx'
+import AdminAuditLogPage from '../pages/admin/AuditLogPage.jsx'
 import SchoolLoginPage from '../pages/school/SchoolLoginPage.jsx'
 import OnboardingPage from '../pages/onboarding/OnboardingPage.jsx'
 import StudentDashboardPage from '../pages/student/DashboardPage.jsx'
@@ -21,6 +27,7 @@ import TeacherGradeEntryPage from '../pages/teacher/GradeEntryPage.jsx'
 import TeacherGradebookPage from '../pages/teacher/GradebookPage.jsx'
 import TeacherAttendancePage from '../pages/teacher/AttendancePage.jsx'
 import TeacherExamsPage from '../pages/teacher/ExamsPage.jsx'
+import TeacherTimetablePage from '../pages/teacher/TimetablePage.jsx'
 import AdminDashboardPage from '../pages/admin/DashboardPage.jsx'
 import AdminStructurePage from '../pages/admin/StructurePage.jsx'
 import AdminStudentsPage from '../pages/admin/StudentsPage.jsx'
@@ -83,7 +90,28 @@ export default function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/school/:slug" element={<SchoolLoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/verify" element={<VerifyDocumentPage />} />
+      <Route path="/verify/:code" element={<VerifyDocumentPage />} />
       <Route path="/forbidden" element={<ForbiddenPage />} />
+
+      <Route
+        path="/account/password"
+        element={
+          <ProtectedRoute>
+            <ChangePasswordPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account/profile"
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="/student" element={studentRoute(<StudentDashboardPage />)} />
       <Route path="/student/grades" element={studentRoute(<StudentGradesPage />)} />
@@ -98,6 +126,7 @@ export default function AppRoutes() {
 
       <Route path="/teacher" element={teacherRoute(<TeacherDashboardPage />)} />
       <Route path="/teacher/assignments" element={teacherRoute(<TeacherAssignmentsPage />)} />
+      <Route path="/teacher/timetable" element={teacherRoute(<TeacherTimetablePage />)} />
       <Route path="/teacher/grades" element={teacherRoute(<TeacherGradeEntryPage />)} />
       <Route path="/teacher/attendance" element={teacherRoute(<TeacherAttendancePage />)} />
       <Route path="/teacher/exams" element={teacherRoute(<TeacherExamsPage />)} />
@@ -120,6 +149,7 @@ export default function AppRoutes() {
       <Route path="/admin/announcements" element={adminRoute(<AdminAnnouncementsPage />)} />
       <Route path="/admin/billing" element={adminRoute(<AdminBillingPage />)} />
       <Route path="/admin/settings" element={adminRoute(<AdminSettingsPage />)} />
+      <Route path="/admin/audit-logs" element={adminRoute(<AdminAuditLogPage />)} />
 
       <Route path="/super-admin" element={superAdminRoute(<SuperAdminDashboardPage />)} />
       <Route path="/super-admin/schools" element={superAdminRoute(<SuperAdminSchoolsPage />)} />
