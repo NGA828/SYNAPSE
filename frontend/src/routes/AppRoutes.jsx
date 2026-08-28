@@ -27,6 +27,7 @@ import TeacherGradeEntryPage from '../pages/teacher/GradeEntryPage.jsx'
 import TeacherGradebookPage from '../pages/teacher/GradebookPage.jsx'
 import TeacherAttendancePage from '../pages/teacher/AttendancePage.jsx'
 import TeacherExamsPage from '../pages/teacher/ExamsPage.jsx'
+import TeacherTimetablePage from '../pages/teacher/TimetablePage.jsx'
 import AdminDashboardPage from '../pages/admin/DashboardPage.jsx'
 import AdminStructurePage from '../pages/admin/StructurePage.jsx'
 import AdminStudentsPage from '../pages/admin/StudentsPage.jsx'
@@ -125,6 +126,7 @@ export default function AppRoutes() {
 
       <Route path="/teacher" element={teacherRoute(<TeacherDashboardPage />)} />
       <Route path="/teacher/assignments" element={teacherRoute(<TeacherAssignmentsPage />)} />
+      <Route path="/teacher/timetable" element={teacherRoute(<TeacherTimetablePage />)} />
       <Route path="/teacher/grades" element={teacherRoute(<TeacherGradeEntryPage />)} />
       <Route path="/teacher/attendance" element={teacherRoute(<TeacherAttendancePage />)} />
       <Route path="/teacher/exams" element={teacherRoute(<TeacherExamsPage />)} />

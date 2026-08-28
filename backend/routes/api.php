@@ -45,6 +45,7 @@ use App\Http\Controllers\Api\Teacher\ClassStudentsController;
 use App\Http\Controllers\Api\Teacher\DashboardController as TeacherDashboardController;
 use App\Http\Controllers\Api\Teacher\ExamController as TeacherExamController;
 use App\Http\Controllers\Api\Teacher\GradebookController;
+use App\Http\Controllers\Api\Teacher\TimetableController as TeacherTimetableController;
 use App\Http\Controllers\Api\TenantController;
 use Illuminate\Support\Facades\Route;
 
@@ -146,6 +147,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:teacher', 'password.rotated',
         ->name('api.teacher.dashboard');
     Route::get('/assignments', [AssignmentController::class, 'index'])
         ->name('api.teacher.assignments');
+    Route::get('/timetable', [TeacherTimetableController::class, 'index'])
+        ->name('api.teacher.timetable');
 
     Route::get('/classes/{schoolClass}/subjects/{subject}/students', [ClassStudentsController::class, 'index'])
         ->middleware('teaching.assignment')

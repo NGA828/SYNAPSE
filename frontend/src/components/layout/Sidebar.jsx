@@ -43,6 +43,7 @@ function useNavForRole(role) {
   const teacher = [
     { label: 'Dashboard', icon: LayoutDashboard, to: '/teacher', end: true },
     { label: 'My Assignments', icon: BookMarked, to: '/teacher/assignments' },
+    { label: 'My Schedule', icon: CalendarDays, to: '/teacher/timetable' },
     { label: 'Grade Entry', icon: BookOpen, to: '/teacher/grades' },
     { label: 'Attendance', icon: CalendarCheck2, to: '/teacher/attendance' },
     { label: 'Exams', icon: CalendarClock, to: '/teacher/exams' },

@@ -774,6 +774,74 @@ function teacherDashboard(config) {
   })
 }
 
+const minutesBetween = (start, end) => {
+  const [startHour, startMinute] = String(start).split(':').map(Number)
+  const [endHour, endMinute] = String(end).split(':').map(Number)
+  return Math.max(endHour * 60 + endMinute - (startHour * 60 + startMinute), 0)
+}
+
+function teacherTimetable(config) {
+  const { user, school } = requireActiveTenant(config)
+  const teacher = teacherForUser(user.id, school.id)
+  if (!teacher) throw fail(403, 'No teacher profile is attached to this account.')
+
+  const year = currentYearFor(school.id)
+  const pairs = new Set(
+    db.teachingAssignments
+      .filter((assignment) => assignment.teacher_id === teacher.id && assignment.academic_year_id === year?.id)
+      .map((assignment) => `${assignment.class_id}:${assignment.subject_id}`),
+  )
+
+  const entries = db.timetableEntries
+    .filter((entry) => entry.school_id === school.id && entry.academic_year_id === year?.id)
+    .filter((entry) => pairs.has(`${entry.class_id}:${entry.subject_id}`))
+    .sort((a, b) => a.day - b.day || a.start.localeCompare(b.start))
+    .map((entry) => ({
+      id: entry.id,
+      day: Number(entry.day),
+      start: entry.start,
+      end: entry.end,
+      duration_minutes: minutesBetween(entry.start, entry.end),
+      subject: { id: entry.subject_id, name: byId(db.subjects, entry.subject_id)?.name },
+      class: { id: entry.class_id, name: byId(db.classes, entry.class_id)?.name },
+    }))
+
+  const minutes = entries.reduce((total, entry) => total + entry.duration_minutes, 0)
+  const perDay = entries.reduce((acc, entry) => ({ ...acc, [entry.day]: (acc[entry.day] ?? 0) + 1 }), {})
+  const busiest = Object.entries(perDay).sort((a, b) => b[1] - a[1])[0]
+
+  const now = new Date()
+  const isoToday = now.getDay() === 0 ? 7 : now.getDay()
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+  const conflicts = Object.values(
+    entries.reduce((acc, entry) => {
+      const key = `${entry.day}|${entry.start}`
+      ;(acc[key] ??= { day: entry.day, start: entry.start, entries: [] }).entries.push(entry)
+      return acc
+    }, {}),
+  ).filter((group) => group.entries.length > 1)
+
+  return ok(config, {
+    academic_year: year,
+    entries,
+    summary: {
+      lessons: entries.length,
+      classes: new Set(entries.map((entry) => entry.class.id)).size,
+      subjects: new Set(entries.map((entry) => entry.subject.id)).size,
+      minutes_per_week: minutes,
+      hours_per_week: Math.round((minutes / 60) * 10) / 10,
+      busiest_day: busiest ? Number(busiest[0]) : null,
+    },
+    today: entries.filter((entry) => entry.day === isoToday),
+    next:
+      entries.find((entry) => entry.day > isoToday || (entry.day === isoToday && entry.start > time)) ??
+      entries[0] ??
+      null,
+    conflicts,
+  })
+}
+
 function teacherAssignmentsList(config) {
   const { user, school } = requireActiveTenant(config)
   const teacher = teacherForUser(user.id, school.id)
@@ -2020,6 +2088,7 @@ const ROUTES = [
   ['post', /^\/admin\/classes\/(\d+)\/report-cards$/, adminClassReportCards],
   ['get', /^\/admin\/payments\/(\d+)\/receipt$/, adminPaymentReceiptPdf],
   ['get', /^\/admin\/audit-logs$/, adminAuditLogs],
+  ['get', /^\/teacher\/timetable$/, teacherTimetable],
   ['get', /^\/super-admin\/audit-logs$/, superAdminAuditLogs],
   ['get', /^\/super-admin\/payments\/(\d+)\/receipt$/, superAdminPaymentReceiptPdf],
 ]

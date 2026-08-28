@@ -15,6 +15,11 @@ export async function listAssignments() {
   return data.data
 }
 
+export async function getTeacherTimetable() {
+  const { data } = await apiClient.get('/teacher/timetable')
+  return data
+}
+
 export async function getClassStudents(classId, subjectId) {
   const { data } = await apiClient.get(`/teacher/classes/${classId}/subjects/${subjectId}/students`)
   return data
