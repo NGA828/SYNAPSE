@@ -4,7 +4,14 @@ import { useAuth } from '../../hooks/useAuth.js'
 import { getRolePath, useRoleRedirect } from '../../hooks/useRoleRedirect.js'
 import { LoginForm } from '../../components/forms/LoginForm.jsx'
 import { Logo } from '../../components/brand/Logo.jsx'
+import { BackgroundSlideshow } from '../../components/brand/BackgroundSlideshow.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
+import campusOne from '../../assets/auth/campus-1.jpg'
+import campusTwo from '../../assets/auth/campus-2.jpg'
+import campusThree from '../../assets/auth/campus-3.jpg'
+import campusFour from '../../assets/auth/campus-4.jpg'
+
+const BACKGROUNDS = [campusOne, campusTwo, campusThree, campusFour]
 
 const DEMO_ACCOUNTS = [
   { label: 'Super Admin', email: 'superadmin@synapse.test' },
@@ -39,8 +46,9 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="relative hidden overflow-hidden lg:block">
-        <div className="absolute inset-0 bg-gradient-to-br from-brand-700 via-violet-700 to-brand-900" />
-        <div className="absolute inset-0 bg-grid-slate opacity-40" />
+        <BackgroundSlideshow images={BACKGROUNDS} interval={5000} />
+        <div className="absolute inset-0 bg-grid-slate opacity-20" />
+
         <div className="relative flex h-full flex-col justify-between p-12">
           <Logo className="text-white" />
           <div>
