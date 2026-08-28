@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Announcement;
 use App\Models\User;
+use App\Notifications\AnnouncementPublishedNotification;
 use Illuminate\Support\Collection;
 
 class AnnouncementService
@@ -32,13 +33,10 @@ class AnnouncementService
             default => User::query()->whereIn('role', ['student', 'teacher', 'admin'])->get(),
         };
 
-        $recipients->each(fn (User $user) => $this->notifications->send(
-            $user,
-            'announcement',
-            $announcement->title,
-            $announcement->body,
-            ['announcement_id' => $announcement->id],
-        ));
+        $this->notifications->notifyMany(
+            $recipients,
+            new AnnouncementPublishedNotification($announcement),
+        );
 
         return $announcement->load('author');
     }

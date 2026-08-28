@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\NotificationResource;
 use App\Models\Notification;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
@@ -19,13 +20,25 @@ class NotificationController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        return response()->json($this->notificationService->forUser($request->user()));
+        $result = $this->notificationService->forUser(
+            $request->user(),
+            (int) $request->query('per_page', 20),
+        );
+
+        return response()->json(
+            NotificationResource::collection($result['data'])
+                ->additional(['unread_count' => $result['unread_count']])
+                ->response()
+                ->getData(true),
+        );
     }
 
     public function read(Request $request, Notification $notification): JsonResponse
     {
         return response()->json([
-            'data' => $this->notificationService->markRead($request->user(), $notification),
+            'data' => NotificationResource::make(
+                $this->notificationService->markRead($request->user(), $notification),
+            ),
         ]);
     }
 

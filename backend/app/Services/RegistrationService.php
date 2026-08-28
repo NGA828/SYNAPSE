@@ -8,14 +8,25 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\User;
+use App\Notifications\TemporaryCredentialsNotification;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class RegistrationService
 {
     public function __construct(
         private readonly SubscriptionService $subscriptions,
         private readonly AuditService $audit,
+        private readonly NotificationService $notifications,
     ) {}
+
+    /**
+     * Generate a readable one-time password (e.g. "Ax7K-92Qm").
+     */
+    public function temporaryPassword(): string
+    {
+        return Str::upper(Str::random(2)).Str::random(3).'-'.random_int(10, 99).Str::random(3);
+    }
 
     /**
      * Create a teacher account + profile within a school.
@@ -26,12 +37,17 @@ class RegistrationService
     {
         $this->subscriptions->assertCanCreate($school, 'teachers');
 
+        $temporary = $data['password'] ?? $this->temporaryPassword();
+
         $user = User::create([
             'school_id' => $school->id,
             'name' => $data['name'],
             'email' => $data['email'],
-            'password' => $data['password'],
+            'phone' => $data['phone'] ?? null,
+            'password' => $temporary,
             'role' => User::ROLE_TEACHER,
+            'must_change_password' => true,
+            'notify_sms' => ! empty($data['phone']),
         ]);
 
         $teacher = Teacher::create([
@@ -41,6 +57,11 @@ class RegistrationService
         ]);
 
         $this->audit->log($school, $actor, 'teacher.created', Teacher::class, $teacher->id);
+
+        $this->notifications->notify(
+            $user,
+            new TemporaryCredentialsNotification($temporary, $school->name),
+        );
 
         return $teacher->load('user');
     }
@@ -54,12 +75,17 @@ class RegistrationService
     {
         $this->subscriptions->assertCanCreate($school, 'students');
 
+        $temporary = $data['password'] ?? $this->temporaryPassword();
+
         $user = User::create([
             'school_id' => $school->id,
             'name' => $data['name'],
             'email' => $data['email'],
-            'password' => $data['password'],
+            'phone' => $data['phone'] ?? null,
+            'password' => $temporary,
             'role' => User::ROLE_STUDENT,
+            'must_change_password' => true,
+            'notify_sms' => ! empty($data['phone']),
         ]);
 
         $student = Student::create([
@@ -81,6 +107,11 @@ class RegistrationService
 
         $this->audit->log($school, $actor, 'student.created', Student::class, $student->id);
 
+        $this->notifications->notify(
+            $user,
+            new TemporaryCredentialsNotification($temporary, $school->name),
+        );
+
         return $student->load('user');
     }
 
@@ -90,7 +121,10 @@ class RegistrationService
             $teacher->user->update([
                 'name' => $data['name'],
                 'email' => $data['email'],
-                ...array_key_exists('password', $data) && $data['password'] ? ['password' => $data['password']] : [],
+                ...array_key_exists('phone', $data) ? ['phone' => $data['phone']] : [],
+                ...array_key_exists('password', $data) && $data['password']
+                    ? ['password' => $data['password'], 'must_change_password' => true]
+                    : [],
             ]);
             $teacher->update(['staff_no' => $data['staff_no'] ?? null]);
             $this->audit->log($teacher->school, $actor, 'teacher.updated', Teacher::class, $teacher->id);
@@ -105,7 +139,10 @@ class RegistrationService
             $student->user->update([
                 'name' => $data['name'],
                 'email' => $data['email'],
-                ...array_key_exists('password', $data) && $data['password'] ? ['password' => $data['password']] : [],
+                ...array_key_exists('phone', $data) ? ['phone' => $data['phone']] : [],
+                ...array_key_exists('password', $data) && $data['password']
+                    ? ['password' => $data['password'], 'must_change_password' => true]
+                    : [],
             ]);
             $student->update(['matricule' => $data['matricule']]);
 

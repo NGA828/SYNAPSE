@@ -21,10 +21,15 @@ class AuthController extends Controller
     {
         $credentials = $request->validated();
 
-        $result = $this->authService->login($credentials['email'], $credentials['password']);
+        $result = $this->authService->login(
+            $credentials['email'],
+            $credentials['password'],
+            $request->userAgent(),
+        );
 
         return response()->json([
             'token' => $result['token'],
+            'must_change_password' => $result['must_change_password'],
             'user' => $result['user']->load(['school', 'student', 'teacher']),
         ]);
     }

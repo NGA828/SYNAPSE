@@ -28,6 +28,28 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'twilio' => [
+        'sid' => env('TWILIO_SID'),
+        'token' => env('TWILIO_TOKEN'),
+        'from' => env('TWILIO_FROM'),
+    ],
+
+    /*
+    | Generic HTTP SMS aggregator (Nexah, SMSVas, Orange SMS API…).
+    | Field names are configurable so switching provider needs no code change.
+    */
+    'sms_http' => [
+        'name' => env('SMS_HTTP_NAME', 'http'),
+        'endpoint' => env('SMS_HTTP_ENDPOINT'),
+        'token' => env('SMS_HTTP_TOKEN'),
+        'method' => env('SMS_HTTP_METHOD', 'post'),
+        'to_field' => env('SMS_HTTP_TO_FIELD', 'to'),
+        'message_field' => env('SMS_HTTP_MESSAGE_FIELD', 'message'),
+        'from_field' => env('SMS_HTTP_FROM_FIELD', 'sender'),
+        'id_field' => env('SMS_HTTP_ID_FIELD', 'id'),
+        'params' => [],
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

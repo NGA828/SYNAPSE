@@ -14,11 +14,17 @@ function FullPageSpinner() {
  * Allow access only when a valid session exists; otherwise redirect to login.
  */
 export function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, mustChangePassword } = useAuth()
   const location = useLocation()
 
   if (loading) return <FullPageSpinner />
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />
+
+  // Accounts still holding a one-time password can go nowhere else; the API
+  // enforces the same rule, this just avoids a wall of 403s.
+  if (mustChangePassword && location.pathname !== '/account/password') {
+    return <Navigate to="/account/password" replace />
+  }
 
   return children
 }

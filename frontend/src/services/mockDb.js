@@ -35,7 +35,13 @@ export const db = {
   ],
   payments: [],
   settings: [],
-  auditLogs: [],
+  auditLogs: [
+    { id: 1, school_id: 2, user_id: 2, action: 'student.created', entity_type: 'App\\Models\\Student', entity_id: 3, metadata: { matricule: 'AICS-2026-003' }, created_at: '2026-08-17T08:12:00' },
+    { id: 2, school_id: 2, user_id: 2, action: 'request.updated', entity_type: 'App\\Models\\DocumentRequest', entity_id: 4, metadata: { status: 'approved' }, created_at: '2026-08-17T11:04:00' },
+    { id: 3, school_id: 2, user_id: 3, action: 'grade.updated', entity_type: 'App\\Models\\Grade', entity_id: 12, metadata: { average: 15.5 }, created_at: '2026-08-18T09:41:00' },
+    { id: 4, school_id: 2, user_id: 2, action: 'document.created', entity_type: 'App\\Models\\Document', entity_id: 1, metadata: { verification_code: 'SYN-4KQ2-9WPT' }, created_at: '2026-08-19T15:20:00' },
+    { id: 5, school_id: 2, user_id: 6, action: 'password.changed', entity_type: 'App\\Models\\User', entity_id: 6, metadata: {}, created_at: '2026-08-20T07:05:00' },
+  ],
 
   users: [
     { id: 1, school_id: null, name: 'Platform Super Admin', email: 'superadmin@synapse.test', password: 'password123', role: 'super_admin' },
@@ -154,7 +160,7 @@ export const db = {
     { id: 4, school_id: 2, student_id: 3, reference: 'REQ-1043', type: 'Certificate of Enrollment', reason: 'Visa application', status: 'approved', admin_note: null, created_at: '2026-08-17T11:00:00' },
   ],
   documents: [
-    { id: 1, school_id: 2, request_id: 2, student_id: 1, title: 'Transcript Request', file_name: 'transcript-req-1030.pdf', mime_type: 'application/pdf', size: 1840, created_at: '2026-08-10T09:00:00' },
+    { id: 1, school_id: 2, request_id: 2, student_id: 1, title: 'Transcript Request', type: 'transcript', verification_code: 'SYN-4KQ2-9WPT', file_name: 'transcript-req-1030.pdf', mime_type: 'application/pdf', size: 1840, created_at: '2026-08-10T09:00:00' },
   ],
   announcements: [
     { id: 1, school_id: 2, title: 'Exam Timetable Published', body: 'The first semester examination timetable has been published.', audience: 'all', published_at: '2026-08-19T09:00:00', author: { name: 'Mrs. Chen' } },

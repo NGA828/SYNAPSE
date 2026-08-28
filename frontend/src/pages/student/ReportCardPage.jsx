@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Printer, Trophy } from 'lucide-react'
+import { Download, Printer, Trophy } from 'lucide-react'
 import { useAsync } from '../../hooks/useAsyncList.js'
 import { useTenant } from '../../hooks/useTenant.js'
 import { getReportCard } from '../../services/studentService.js'
 import { PageContainer } from '../../components/layout/PageContainer.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
+import { downloadReportCard } from '../../services/downloadService.js'
 import { ReportCardTable } from '../../components/dashboard/ReportCardTable.jsx'
 import { ProgressRing } from '../../components/ui/ProgressRing.jsx'
 import { SemesterTabs } from '../../components/ui/SemesterTabs.jsx'
@@ -16,6 +17,21 @@ import { formatDate } from '../../utils/formatters.js'
 
 export default function ReportCardPage() {
   const [semesterId, setSemesterId] = useState('')
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState(null)
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    setDownloadError(null)
+
+    try {
+      await downloadReportCard(semesterId || undefined)
+    } catch {
+      setDownloadError('Could not generate the PDF. Please try again.')
+    } finally {
+      setDownloading(false)
+    }
+  }
   const { data, loading, error } = useAsync(() => getReportCard(semesterId || undefined), [semesterId])
   const { school } = useTenant()
 
@@ -26,11 +42,17 @@ export default function ReportCardPage() {
           title="Report card"
           description={`${data?.class?.name ?? 'Your class'} · ${data?.semester?.name ?? data?.academic_year?.name ?? ''}`}
         >
+          <Button onClick={handleDownload} loading={downloading}>
+            <Download className="size-4" aria-hidden="true" />
+            Download PDF
+          </Button>
           <Button variant="secondary" onClick={() => window.print()}>
             <Printer className="size-4" aria-hidden="true" />
             Print
           </Button>
         </PageHeader>
+
+        {downloadError ? <p className="text-sm text-rose-600">{downloadError}</p> : null}
 
         <SemesterTabs semesters={data?.semesters} value={semesterId} onChange={setSemesterId} />
 

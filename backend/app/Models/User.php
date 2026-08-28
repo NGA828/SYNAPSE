@@ -13,7 +13,20 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['school_id', 'name', 'email', 'password', 'role'])]
+#[Fillable([
+    'school_id',
+    'name',
+    'email',
+    'phone',
+    'password',
+    'role',
+    'must_change_password',
+    'password_changed_at',
+    'last_login_at',
+    'notify_email',
+    'notify_sms',
+    'locale',
+])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -45,6 +58,11 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'must_change_password' => 'boolean',
+            'password_changed_at' => 'datetime',
+            'last_login_at' => 'datetime',
+            'notify_email' => 'boolean',
+            'notify_sms' => 'boolean',
         ];
     }
 
@@ -90,5 +108,22 @@ class User extends Authenticatable
     public function isStudent(): bool
     {
         return $this->role === self::ROLE_STUDENT;
+    }
+
+    /**
+     * Where SMS notifications for this account should be delivered.
+     */
+    public function routeNotificationForSms(): ?string
+    {
+        return $this->phone;
+    }
+
+    /**
+     * Send the SPA-aware password reset notification instead of Laravel's
+     * default web link.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new \App\Notifications\ResetPasswordNotification($token));
     }
 }

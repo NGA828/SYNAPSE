@@ -1,8 +1,11 @@
-import { GraduationCap } from 'lucide-react'
+import { Download, GraduationCap } from 'lucide-react'
+import { useState } from 'react'
 import { useAsync } from '../../hooks/useAsyncList.js'
 import { getTranscript } from '../../services/transcriptService.js'
 import { PageContainer } from '../../components/layout/PageContainer.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { downloadTranscript } from '../../services/downloadService.js'
 import { Card, CardBody, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
@@ -15,13 +18,36 @@ export default function TranscriptPage() {
   const { data, loading, error } = useAsync(getTranscript)
   const years = data?.years ?? []
 
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState(null)
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    setDownloadError(null)
+
+    try {
+      await downloadTranscript()
+    } catch {
+      setDownloadError('Could not generate the PDF. Please try again.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <PageContainer>
       <div className="space-y-6">
         <PageHeader
           title="Transcript"
           description={`${data?.student?.matricule ?? 'Academic history'} · cumulative across all years`}
-        />
+        >
+          <Button onClick={handleDownload} loading={downloading}>
+            <Download className="size-4" aria-hidden="true" />
+            Download PDF
+          </Button>
+        </PageHeader>
+
+        {downloadError ? <p className="text-sm text-rose-600">{downloadError}</p> : null}
 
         {loading ? (
           <div className="flex justify-center py-20">

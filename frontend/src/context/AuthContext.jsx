@@ -23,10 +23,19 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = useCallback(async (credentials) => {
-    const { token, user: authenticated } = await loginRequest(credentials)
+    const { token, user: authenticated, must_change_password: mustChange } = await loginRequest(credentials)
     localStorage.setItem(TOKEN_KEY, token)
-    setUser(authenticated)
+    setUser({ ...authenticated, must_change_password: mustChange ?? authenticated.must_change_password ?? false })
     return authenticated
+  }, [])
+
+  /**
+   * Re-read the signed-in user (after a profile edit or password rotation).
+   */
+  const refresh = useCallback(async () => {
+    const { user: fetched } = await fetchUser()
+    setUser(fetched)
+    return fetched
   }, [])
 
   const logout = useCallback(async () => {
@@ -43,11 +52,13 @@ export function AuthProvider({ children }) {
       user,
       role: user?.role ?? null,
       isAuthenticated: Boolean(user),
+      mustChangePassword: Boolean(user?.must_change_password),
       loading,
       login,
       logout,
+      refresh,
     }),
-    [user, loading, login, logout],
+    [user, loading, login, logout, refresh],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\DocumentResource;
 use App\Models\Document;
 use App\Models\Student;
 use App\Services\DocumentService;
@@ -21,7 +22,7 @@ class DocumentController extends Controller
         $student = $this->student($request);
 
         return response()->json([
-            'data' => $this->documentService->forStudent($student),
+            'data' => DocumentResource::collection($this->documentService->forStudent($student)),
         ]);
     }
 

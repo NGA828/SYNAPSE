@@ -2,6 +2,12 @@ import { Route, Routes } from 'react-router-dom'
 import LandingPage from '../pages/LandingPage.jsx'
 import LoginPage from '../pages/auth/LoginPage.jsx'
 import RegisterPage from '../pages/auth/RegisterPage.jsx'
+import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.jsx'
+import ResetPasswordPage from '../pages/auth/ResetPasswordPage.jsx'
+import ChangePasswordPage from '../pages/auth/ChangePasswordPage.jsx'
+import ProfilePage from '../pages/account/ProfilePage.jsx'
+import VerifyDocumentPage from '../pages/public/VerifyDocumentPage.jsx'
+import AdminAuditLogPage from '../pages/admin/AuditLogPage.jsx'
 import SchoolLoginPage from '../pages/school/SchoolLoginPage.jsx'
 import OnboardingPage from '../pages/onboarding/OnboardingPage.jsx'
 import StudentDashboardPage from '../pages/student/DashboardPage.jsx'
@@ -83,7 +89,28 @@ export default function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/school/:slug" element={<SchoolLoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/verify" element={<VerifyDocumentPage />} />
+      <Route path="/verify/:code" element={<VerifyDocumentPage />} />
       <Route path="/forbidden" element={<ForbiddenPage />} />
+
+      <Route
+        path="/account/password"
+        element={
+          <ProtectedRoute>
+            <ChangePasswordPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account/profile"
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="/student" element={studentRoute(<StudentDashboardPage />)} />
       <Route path="/student/grades" element={studentRoute(<StudentGradesPage />)} />
@@ -120,6 +147,7 @@ export default function AppRoutes() {
       <Route path="/admin/announcements" element={adminRoute(<AdminAnnouncementsPage />)} />
       <Route path="/admin/billing" element={adminRoute(<AdminBillingPage />)} />
       <Route path="/admin/settings" element={adminRoute(<AdminSettingsPage />)} />
+      <Route path="/admin/audit-logs" element={adminRoute(<AdminAuditLogPage />)} />
 
       <Route path="/super-admin" element={superAdminRoute(<SuperAdminDashboardPage />)} />
       <Route path="/super-admin/schools" element={superAdminRoute(<SuperAdminSchoolsPage />)} />

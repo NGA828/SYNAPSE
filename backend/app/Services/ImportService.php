@@ -37,8 +37,10 @@ class ImportService
                 $data = [
                     'name' => $row['name'],
                     'email' => $row['email'],
-                    'password' => $row['password'] ?? 'password123',
+                    // Never a shared default: each account gets its own one-time password.
+                    'password' => $row['password'] ?? $this->registrations->temporaryPassword(),
                     'matricule' => $row['matricule'],
+                    'phone' => $row['phone'] ?? null,
                     'class_id' => $row['class_id'] ?? null,
                     'academic_year_id' => $row['academic_year_id'] ?? AcademicYear::current()?->id,
                 ];

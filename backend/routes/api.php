@@ -2,12 +2,15 @@
 
 use App\Http\Controllers\Api\Admin\AcademicYearController;
 use App\Http\Controllers\Api\Admin\AnnouncementController as AdminAnnouncementController;
+use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
 use App\Http\Controllers\Api\Admin\AttendanceController as AdminAttendanceController;
 use App\Http\Controllers\Api\Admin\BillingController;
 use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Api\Admin\ExamController as AdminExamController;
 use App\Http\Controllers\Api\Admin\GradeComponentController as AdminGradeComponentController;
 use App\Http\Controllers\Api\Admin\ImportController as AdminImportController;
+use App\Http\Controllers\Api\Admin\ReceiptController;
+use App\Http\Controllers\Api\Admin\ReportCardController as AdminReportCardController;
 use App\Http\Controllers\Api\Admin\RequestController as AdminRequestController;
 use App\Http\Controllers\Api\Admin\SchoolClassController;
 use App\Http\Controllers\Api\Admin\SemesterController as AdminSemesterController;
@@ -18,7 +21,10 @@ use App\Http\Controllers\Api\Admin\TeacherController as AdminTeacherController;
 use App\Http\Controllers\Api\Admin\TeachingAssignmentController;
 use App\Http\Controllers\Api\Admin\TimetableController as AdminTimetableController;
 use App\Http\Controllers\Api\AnnouncementController;
+use App\Http\Controllers\Api\Auth\PasswordController;
+use App\Http\Controllers\Api\Auth\ProfileController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DocumentVerificationController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\PublicSchoolController;
@@ -27,6 +33,7 @@ use App\Http\Controllers\Api\Student\AttendanceController as StudentAttendanceCo
 use App\Http\Controllers\Api\Student\DocumentController as StudentDocumentController;
 use App\Http\Controllers\Api\Student\RequestController as StudentRequestController;
 use App\Http\Controllers\Api\StudentController;
+use App\Http\Controllers\Api\SuperAdmin\AuditLogController as SuperAdminAuditLogController;
 use App\Http\Controllers\Api\SuperAdmin\DashboardController as SuperAdminDashboardController;
 use App\Http\Controllers\Api\SuperAdmin\PaymentController as SuperAdminPaymentController;
 use App\Http\Controllers\Api\SuperAdmin\PlanController as SuperAdminPlanController;
@@ -46,7 +53,23 @@ use Illuminate\Support\Facades\Route;
 | Public
 |--------------------------------------------------------------------------
 */
-Route::post('/login', [AuthController::class, 'login'])->name('api.login');
+Route::post('/login', [AuthController::class, 'login'])
+    ->middleware('throttle:login')
+    ->name('api.login');
+
+// Password recovery — tightly throttled, and never reveals whether an
+// address exists.
+Route::post('/forgot-password', [PasswordController::class, 'forgot'])
+    ->middleware('throttle:password')
+    ->name('api.password.forgot');
+Route::post('/reset-password', [PasswordController::class, 'reset'])
+    ->middleware('throttle:password')
+    ->name('api.password.reset');
+
+// Public authenticity check for a printed document.
+Route::get('/verify/{code}', [DocumentVerificationController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('api.documents.verify');
 Route::get('/onboarding/plans', [OnboardingController::class, 'plans'])->name('api.onboarding.plans');
 Route::post('/onboarding/schools', [OnboardingController::class, 'store'])->name('api.onboarding.store');
 Route::get('/school/{school:slug}', [PublicSchoolController::class, 'show'])->name('api.school.show');
@@ -61,6 +84,13 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::get('/user', [AuthController::class, 'user'])->name('api.user');
     Route::get('/tenant', [TenantController::class, 'show'])->name('api.tenant');
 
+    // Reachable even when the account still holds a temporary password.
+    Route::post('/password', [PasswordController::class, 'change'])->name('api.password.change');
+    Route::get('/profile', [ProfileController::class, 'show'])->name('api.profile');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('api.profile.update');
+    Route::post('/profile/sign-out-others', [ProfileController::class, 'signOutOthers'])
+        ->name('api.profile.sign-out-others');
+
     Route::get('/notifications', [NotificationController::class, 'index'])->name('api.notifications');
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('api.notifications.read-all');
     Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->name('api.notifications.read');
@@ -73,7 +103,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 | Student — tenant + subscription enforced
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'tenant', 'role:student', 'subscription'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:student', 'password.rotated', 'subscription'])->group(function () {
     Route::get('/student/dashboard', [StudentController::class, 'dashboard'])
         ->name('api.student.dashboard');
     Route::get('/student/grades', [StudentAcademicController::class, 'grades'])
@@ -97,6 +127,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:student', 'subscription'])->g
         ->name('api.student.attendance');
     Route::get('/student/transcript', [StudentAcademicController::class, 'transcript'])
         ->name('api.student.transcript');
+    Route::get('/student/report-card/pdf', [StudentAcademicController::class, 'reportCardPdf'])
+        ->middleware('feature:report_cards')
+        ->name('api.student.report-card.pdf');
+    Route::get('/student/transcript/pdf', [StudentAcademicController::class, 'transcriptPdf'])
+        ->name('api.student.transcript.pdf');
     Route::get('/student/exams', [StudentAcademicController::class, 'exams'])
         ->name('api.student.exams');
 });
@@ -106,7 +141,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:student', 'subscription'])->g
 | Teacher — tenant + subscription enforced, assignment scoped
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'tenant', 'role:teacher', 'subscription'])->prefix('teacher')->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:teacher', 'password.rotated', 'subscription'])->prefix('teacher')->group(function () {
     Route::get('/dashboard', [TeacherDashboardController::class, 'index'])
         ->name('api.teacher.dashboard');
     Route::get('/assignments', [AssignmentController::class, 'index'])
@@ -144,13 +179,15 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:teacher', 'subscription'])->p
 | School administrator
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin', 'password.rotated'])->prefix('admin')->group(function () {
     // Always available so an expired school can still renew.
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('api.admin.dashboard');
     Route::get('/billing', [BillingController::class, 'index'])->name('api.admin.billing');
     Route::post('/billing/upgrade', [BillingController::class, 'upgrade'])->name('api.admin.billing.upgrade');
     Route::post('/billing/renew', [BillingController::class, 'renew'])->name('api.admin.billing.renew');
     Route::get('/settings', [SettingsController::class, 'show'])->name('api.admin.settings');
+    Route::get('/audit-logs', [AdminAuditLogController::class, 'index'])->name('api.admin.audit-logs');
+    Route::get('/payments/{payment}/receipt', [ReceiptController::class, 'show'])->name('api.admin.payments.receipt');
     Route::patch('/settings', [SettingsController::class, 'update'])->name('api.admin.settings.update');
 
     // Academic management — subscription enforced.
@@ -205,6 +242,18 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->gr
 
         Route::post('/announcements', [AdminAnnouncementController::class, 'store'])
             ->name('api.admin.announcements.store');
+
+        // Report cards & transcripts as PDFs.
+        Route::get('/students/{student}/report-card', [AdminReportCardController::class, 'student'])
+            ->middleware('feature:report_cards')
+            ->name('api.admin.students.report-card');
+        Route::get('/students/{student}/transcript', [AdminReportCardController::class, 'transcript'])
+            ->name('api.admin.students.transcript');
+        Route::get('/students/{student}/documents', [AdminReportCardController::class, 'issued'])
+            ->name('api.admin.students.documents');
+        Route::post('/classes/{schoolClass}/report-cards', [AdminReportCardController::class, 'class'])
+            ->middleware('feature:report_cards')
+            ->name('api.admin.classes.report-cards');
     });
 });
 
@@ -213,7 +262,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->prefix('admin')->gr
 | Platform super administrator
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'tenant', 'role:super_admin'])->prefix('super-admin')->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:super_admin', 'password.rotated'])->prefix('super-admin')->group(function () {
     Route::get('/dashboard', [SuperAdminDashboardController::class, 'index'])->name('api.super-admin.dashboard');
 
     Route::apiResource('schools', SuperAdminSchoolController::class)->only(['index', 'store', 'show', 'update']);
@@ -228,4 +277,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:super_admin'])->prefix('super
         ->name('api.super-admin.subscriptions');
     Route::get('/payments', [SuperAdminPaymentController::class, 'index'])
         ->name('api.super-admin.payments');
+    Route::get('/payments/{payment}/receipt', [ReceiptController::class, 'show'])
+        ->name('api.super-admin.payments.receipt');
+
+    Route::get('/audit-logs', [SuperAdminAuditLogController::class, 'index'])
+        ->name('api.super-admin.audit-logs');
 });

@@ -121,6 +121,8 @@ class DatabaseSeeder extends Seeder
             'name' => 'Platform Super Admin',
             'password' => Hash::make('password123'),
             'role' => User::ROLE_SUPER_ADMIN,
+            'must_change_password' => false,
+            'password_changed_at' => now(),
         ]);
     }
 
@@ -360,6 +362,8 @@ class DatabaseSeeder extends Seeder
             'name' => $name,
             'password' => Hash::make('password123'),
             'role' => $role,
+            'must_change_password' => false,
+            'password_changed_at' => now(),
         ]);
     }
 
