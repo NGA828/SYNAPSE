@@ -51,7 +51,7 @@ class NotificationService
      * Deliver to every user holding a role. Always scoped to a school so a
      * queued job can never leak across tenants.
      */
-    public function notifyRole(School|int|null $school, string $role, SynapseNotification $notification): void
+    public function notifyRole(School|int|null $school, ?string $role, SynapseNotification $notification): void
     {
         $schoolId = $school instanceof School ? $school->id : $school;
 
@@ -61,7 +61,10 @@ class NotificationService
 
         User::query()
             ->where('school_id', $schoolId)
-            ->where('role', $role)
+            // A null role means every account at the school — used for
+            // school-wide events, where filtering on one role would silently
+            // leave the others out.
+            ->when($role, fn ($query) => $query->where('role', $role))
             ->chunkById(200, fn (Collection $users) => $this->notifyMany($users, $notification));
     }
 

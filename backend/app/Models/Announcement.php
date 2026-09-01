@@ -18,6 +18,19 @@ class Announcement extends Model
     public const AUDIENCE_TEACHERS = 'teachers';
 
     /**
+     * The closed set of audiences. Kept next to the individual constants so a
+     * new audience cannot be added in one place and forgotten in the validators
+     * that read this list.
+     *
+     * @var list<string>
+     */
+    public const AUDIENCES = [
+        self::AUDIENCE_ALL,
+        self::AUDIENCE_STUDENTS,
+        self::AUDIENCE_TEACHERS,
+    ];
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>

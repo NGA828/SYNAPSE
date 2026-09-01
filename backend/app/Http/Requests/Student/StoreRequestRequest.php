@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Student;
 
+use App\Models\DocumentRequest;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreRequestRequest extends FormRequest
 {
@@ -17,7 +19,10 @@ class StoreRequestRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type' => ['required', 'string', 'max:255'],
+            // A closed list. Free text here is what let a request be filed for
+            // a document no template can produce, and then be issued a generic
+            // certificate that was not what the student asked for.
+            'type' => ['required', 'string', Rule::in(DocumentRequest::TYPES)],
             'reason' => ['nullable', 'string', 'max:2000'],
         ];
     }

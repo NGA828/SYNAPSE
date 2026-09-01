@@ -2,6 +2,7 @@ import { useAsyncList } from '../../hooks/useAsyncList.js'
 import {
   generateRequestDocument,
   getAdminRequests,
+  getRequestTriage,
   updateRequestStatus,
 } from '../../services/requestService.js'
 import { REQUEST_STATUS_META } from '../../utils/requests.js'
@@ -52,6 +53,24 @@ function Actions({ request, onChanged }) {
   }
 
   if (request.status === 'approved') {
+    /*
+     * A document no template can produce is not a button that fails on click —
+     * the admin needs to know before they press it, and the reason matters more
+     * than the refusal.
+     */
+    if (request.triage && !request.triage.auto_generatable) {
+      return (
+        <div className="flex flex-col items-end gap-1">
+          <Button size="sm" disabled>
+            Generate document
+          </Button>
+          <span className="max-w-56 text-right text-xs text-amber-700">
+            {request.triage.reason}
+          </span>
+        </div>
+      )
+    }
+
     return (
       <div className="flex justify-end">
         <Button size="sm" onClick={generate}>
@@ -80,6 +99,7 @@ function Actions({ request, onChanged }) {
 
 export function RequestManager() {
   const { data: requests, loading, error, reload } = useAsyncList(getAdminRequests)
+  const { data: triage } = useAsyncList(getRequestTriage)
 
   const columns = [
     { key: 'reference', header: 'Reference', cellClassName: 'font-mono text-xs text-slate-600' },
@@ -92,7 +112,22 @@ export function RequestManager() {
         </span>
       ),
     },
-    { key: 'type', header: 'Type' },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (request) => (
+        <span>
+          <span className="block text-slate-800">{request.type}</span>
+          {request.triage?.needs_human ? (
+            <span className="mt-1 inline-flex">
+              <Badge variant="warning" dot>
+                Needs a person
+              </Badge>
+            </span>
+          ) : null}
+        </span>
+      ),
+    },
     {
       key: 'date',
       header: 'Date',
@@ -117,7 +152,14 @@ export function RequestManager() {
 
   return (
     <Card>
-      <CardHeader title="Student requests" description="Review, approve and generate documents" />
+      <CardHeader
+        title="Student requests"
+        description={
+          triage
+            ? `${triage.needs_human} of ${triage.total} need a member of staff; the rest can be issued straight away.`
+            : 'Review, approve and generate documents'
+        }
+      />
       <CardBody>
         <DataTable
           columns={columns}

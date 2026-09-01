@@ -21,10 +21,31 @@ import {
   schoolOf,
   semestersFor,
   serializeDocument,
+  GRADING,
+  AT_RISK,
   serializeExam,
+  serializeConversation,
+  serializeMessage,
+  serializeEvent,
+  serializeUserBrief,
+  eventVisibleToRole,
   serializeGrade,
+  serializeAttachment,
+  serializeHomework,
+  serializeLesson,
+  serializeQuiz,
+  serializeQuizAttempt,
+  quizClosed,
+  serializeSubmission,
   serializeTimetableEntry,
   setSetting,
+  storeFile,
+  readFile,
+  HOMEWORK_TYPE,
+  SUBMISSION_TYPE,
+  LESSON_TYPE,
+  QUIZ_TYPE,
+  DOCUMENT_TYPES,
   studentForUser,
   teacherForUser,
   userName,
@@ -68,13 +89,17 @@ const failSubscription = () => {
  * search across the given fields, and the Laravel `{data, meta, links}`
  * envelope so the SPA behaves identically with and without the real API.
  */
+/** Reads `a.b.c` off a row, so callers can search nested payloads. */
+const valueAt = (row, path) =>
+  path.split('.').reduce((current, key) => (current == null ? undefined : current[key]), row)
+
 const paginate = (config, rows, searchable = []) => {
   const params = config.params ?? {}
   const term = String(params.search ?? '').trim().toLowerCase()
 
   const filtered = term
     ? rows.filter((row) =>
-        searchable.some((field) => String(row?.[field] ?? '').toLowerCase().includes(term)),
+        searchable.some((field) => String(valueAt(row, field) ?? '').toLowerCase().includes(term)),
       )
     : rows
 
@@ -185,6 +210,16 @@ const requireTenant = (config) => {
   const school = schoolOf(user)
   if (!school) throw fail(403, 'No school is associated with your account.')
   return { user, school }
+}
+
+/**
+ * Admin guard. The Laravel admin route group applies role:admin but not the
+ * subscription middleware, so this resolves the tenant without demanding an
+ * active subscription — matching the real routes.
+ */
+const requireAdmin = (config) => {
+  requireRole(config, 'admin')
+  return requireTenant(config)
 }
 
 const requireActiveTenant = (config) => {
@@ -332,6 +367,60 @@ const announcementsForUser = (user) => {
 const notificationsForUser = (user) =>
   db.notifications.filter((notification) => notification.user_id === user.id).sort((a, b) => b.id - a.id)
 
+/*
+| Document-request triage. Mirrors App\Services\DocumentTypeService: classify
+| the stored text, then decide whether a template may answer it at all. An
+| unrecognised type is reported as needing a person rather than being issued a
+| generic certificate.
+*/
+const DOCUMENT_KEYWORDS = [
+  ['Recommendation Letter', ['recommendation', 'reference letter', 'referee', 'testimonial']],
+  ['Transcript Request', ['transcript', 'academic record', 'attestation', 'statement of result']],
+  ['Transfer Certificate', ['transfer']],
+  ['School Leaving Certificate', ['leaving', 'graduat', 'completion of studies']],
+  ['Certificate of Good Conduct', ['conduct', 'good standing', 'discipline', 'character']],
+  ['Certificate of Enrollment', ['enrol', 'attendance certificate', 'proof of stud', 'registered at']],
+]
+
+const classifyDocumentType = (text) => {
+  if (!text || !String(text).trim()) return null
+  const trimmed = String(text).trim()
+  const exact = DOCUMENT_TYPES.find((type) => type.label.toLowerCase() === trimmed.toLowerCase())
+  if (exact) return exact.label
+  const needle = trimmed.toLowerCase()
+  for (const [label, keywords] of DOCUMENT_KEYWORDS) {
+    if (keywords.some((keyword) => needle.includes(keyword))) return label
+  }
+  return needle.includes('other') ? 'Other' : null
+}
+
+const documentTriage = (request) => {
+  const label = classifyDocumentType(request.type)
+  const entry = DOCUMENT_TYPES.find((type) => type.label === label)
+  const auto = Boolean(entry?.auto_generatable)
+
+  let reason = null
+  if (!entry) {
+    reason = 'The requested document is not one the system can issue. A member of staff needs to read the reason and respond directly.'
+  } else if (!auto) {
+    reason = label === 'Recommendation Letter'
+      ? 'A recommendation letter has to be written and signed by someone who teaches the student.'
+      : 'This request is unspecified, so a member of staff needs to establish what is needed.'
+  }
+
+  return {
+    stored_type: request.type,
+    type: label,
+    slug: entry?.slug ?? 'unrecognised',
+    label,
+    classified: Boolean(entry),
+    exact: Boolean(entry) && String(entry.label).toLowerCase() === String(request.type).trim().toLowerCase(),
+    auto_generatable: auto,
+    needs_human: !auto,
+    reason,
+  }
+}
+
 const serializeStudentRequest = (request) => ({
   id: request.id,
   reference: request.reference,
@@ -340,6 +429,7 @@ const serializeStudentRequest = (request) => ({
   status: request.status,
   admin_note: request.admin_note,
   created_at: request.created_at,
+  triage: documentTriage(request),
   documents: db.documents.filter((item) => item.request_id === request.id).map(serializeDocument),
 })
 
@@ -732,6 +822,12 @@ function studentCreateRequest(config) {
   const body = readBody(config)
   const errors = validate(body, ['type'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  // Closed list, matching Rule::in(DocumentRequest::TYPES) on the server.
+  if (!DOCUMENT_TYPES.some((type) => type.label === body.type)) {
+    throw fail(422, 'The given data was invalid.', {
+      type: ['The selected type is invalid.'],
+    })
+  }
   const request = {
     id: nextMockId(),
     school_id: school.id,
@@ -748,6 +844,206 @@ function studentCreateRequest(config) {
     db.notifications.push({ id: nextMockId(), school_id: school.id, user_id: admin.id, type: 'request_created', title: 'New request', message: `${user.name} submitted a "${request.type}" request.`, data: { request_id: request.id }, read_at: null })
   })
   return ok(config, { data: serializeStudentRequest(request) }, 201)
+}
+
+/*
+| Report-card comments. Mirrors DeterministicCommentWriter: the same clause
+| order and the same rule that a writer may describe a number but never invent
+| one. There is no provider here — the mock has no network — so `ai_available`
+| is always false and drafts are always `generated`.
+*/
+const commentNumber = (value) => {
+  const text = Number(value).toFixed(2)
+  return text.replace(/\.?0+$/, '')
+}
+
+const commentOrdinal = (rank) => {
+  const mod100 = rank % 100
+  if (mod100 >= 11 && mod100 <= 13) return `${rank}th`
+  // Parens matter: `+` binds tighter than `??`, so without them the fallback
+  // never fires and rank 4 renders as "4undefined".
+  const suffix = { 1: 'st', 2: 'nd', 3: 'rd' }[rank % 10] ?? 'th'
+  return `${rank}${suffix}`
+}
+
+const writeReportCardComment = (studentId) => {
+  const student = byId(db.students, studentId)
+  const year = currentYearFor(student.school_id)
+  if (!student || !year) return 'No marks have been recorded for this period.'
+
+  const rows = db.grades
+    .filter((grade) => Number(grade.student_id) === Number(studentId) && Number(grade.academic_year_id) === Number(year.id))
+    .map((grade) => ({
+      name: byId(db.subjects, grade.subject_id)?.name ?? 'Subject',
+      average: weightedAverageOf(grade),
+    }))
+    .filter((row) => row.average !== null && row.average !== undefined)
+
+  if (rows.length === 0) return 'No marks have been recorded for this period.'
+
+  const scale = GRADING.scale
+  const pass = GRADING.pass_mark
+  const average = rows.reduce((sum, row) => sum + row.average, 0) / rows.length
+  const mention = GRADING.mentions.find((entry) => average >= entry.min)?.label ?? '—'
+
+  const parts = [`Overall average of ${commentNumber(average)} out of ${commentNumber(scale)} — ${mention}.`]
+
+  const enrolled = db.enrollments.filter(
+    (enrollment) => Number(enrollment.student_id) === Number(studentId)
+      && Number(enrollment.academic_year_id) === Number(year.id),
+  )
+  if (enrolled.length > 0) {
+    const classmates = db.enrollments.filter(
+      (other) => Number(other.class_id) === Number(enrolled[0].class_id)
+        && Number(other.academic_year_id) === Number(year.id),
+    )
+    if (classmates.length > 1) {
+      const ranked = classmates
+        .map((other) => {
+          const values = db.grades
+            .filter((grade) => Number(grade.student_id) === Number(other.student_id)
+              && Number(grade.academic_year_id) === Number(year.id))
+            .map((grade) => weightedAverageOf(grade))
+            .filter((value) => value !== null && value !== undefined)
+          return { id: other.student_id, average: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null }
+        })
+        .filter((row) => row.average !== null)
+        .sort((a, b) => b.average - a.average)
+      const position = ranked.findIndex((row) => Number(row.id) === Number(studentId)) + 1
+      if (position > 0) {
+        parts.push(`Ranked ${commentOrdinal(position)} of ${classmates.length} in the class.`)
+      }
+    }
+  }
+
+  const sorted = [...rows].sort((a, b) => b.average - a.average)
+  const strongest = sorted[0]
+  const weakest = sorted[sorted.length - 1]
+  if (rows.length > 1 && strongest.name !== weakest.name) {
+    parts.push(`Strongest result in ${strongest.name} (${commentNumber(strongest.average)}).`)
+  }
+
+  const failing = [...rows].filter((row) => row.average < pass).sort((a, b) => a.average - b.average)
+  if (failing.length > 0) {
+    const named = failing.slice(0, 3).map((row) => `${row.name} (${commentNumber(row.average)})`)
+    parts.push(`Below the ${commentNumber(pass)} pass mark in ${named.join(' and ')}.`)
+  }
+
+  if (average >= pass * 1.6) parts.push('Excellent work; the task now is to hold this level.')
+  else if (average >= pass * 1.2) parts.push('Solid results, and consistent effort would lift the average further.')
+  else if (average >= pass) parts.push('Satisfactory overall, with more regular revision needed in the weaker subjects.')
+  else parts.push('Additional support is recommended, starting with the subjects named above.')
+
+  return parts.join(' ')
+}
+
+const serializeComment = (comment) => ({
+  id: comment.id,
+  body: comment.body,
+  source: comment.source,
+  is_locked: Boolean(comment.is_locked),
+  subject_id: comment.subject_id ?? null,
+  semester_id: comment.semester_id ?? null,
+  written_by: comment.written_by ?? null,
+  updated_at: comment.created_at,
+})
+
+const findComment = (studentId, subjectId = null) => db.reportCardComments.find(
+  (comment) => Number(comment.student_id) === Number(studentId)
+    && (comment.subject_id ?? null) === subjectId,
+)
+
+function teacherShowComment(config, match) {
+  const { user, school } = requireTenant(config)
+  // Laravel mounts this under the role:teacher group, so an administrator gets
+  // a 403 here even though they run the school.
+  if (user.role !== 'teacher') throw fail(403, 'Only teachers can access this resource.')
+  const student = scopedFind(db.students, Number(match[1]), school.id)
+  if (!student) throw fail(404, 'Not found.')
+  if (!academicSeesStudent(user, student)) throw fail(403, 'That student is not in one of your classes.')
+
+  const saved = findComment(student.id)
+
+  return ok(config, {
+    data: {
+      comment: saved ? serializeComment(saved) : null,
+      effective: saved?.is_locked ? saved.body : writeReportCardComment(student.id),
+      ai_available: false,
+    },
+  })
+}
+
+function teacherDraftComment(config, match) {
+  const { user, school } = requireTenant(config)
+  // Laravel mounts this under the role:teacher group, so an administrator gets
+  // a 403 here even though they run the school.
+  if (user.role !== 'teacher') throw fail(403, 'Only teachers can access this resource.')
+  const student = scopedFind(db.students, Number(match[1]), school.id)
+  if (!student) throw fail(404, 'Not found.')
+  if (!academicSeesStudent(user, student)) throw fail(403, 'That student is not in one of your classes.')
+
+  // Drafting persists nothing, exactly as the Laravel endpoint does.
+  return ok(config, {
+    data: { body: writeReportCardComment(student.id), source: 'generated', ai_available: false },
+  })
+}
+
+function teacherSaveComment(config, match) {
+  const { user, school } = requireTenant(config)
+  // Laravel mounts this under the role:teacher group, so an administrator gets
+  // a 403 here even though they run the school.
+  if (user.role !== 'teacher') throw fail(403, 'Only teachers can access this resource.')
+  const student = scopedFind(db.students, Number(match[1]), school.id)
+  if (!student) throw fail(404, 'Not found.')
+  if (!academicSeesStudent(user, student)) throw fail(403, 'That student is not in one of your classes.')
+
+  const body = readBody(config)
+  const errors = validate(body, ['body'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  if (!String(body.body).trim()) throw fail(422, 'A comment cannot be empty.', { body: ['A comment cannot be empty.'] })
+  if (String(body.body).length > 400) throw fail(422, 'A comment cannot exceed 400 characters.', { body: ['A comment cannot exceed 400 characters.'] })
+
+  const existing = findComment(student.id)
+  const lock = body.lock === true || body.lock === 'true'
+
+  if (existing) {
+    // A person has now vouched for this text, so provenance changes.
+    existing.body = String(body.body).trim()
+    existing.source = 'teacher'
+    existing.is_locked = lock
+    existing.written_by = user.id
+    return ok(config, { data: serializeComment(existing) })
+  }
+
+  const comment = {
+    id: nextMockId(),
+    school_id: school.id,
+    student_id: student.id,
+    subject_id: null,
+    academic_year_id: currentYearFor(school.id)?.id ?? null,
+    semester_id: null,
+    body: String(body.body).trim(),
+    source: 'teacher',
+    is_locked: lock,
+    written_by: user.id,
+    created_at: new Date().toISOString(),
+  }
+  db.reportCardComments.push(comment)
+  return ok(config, { data: serializeComment(comment) })
+}
+
+function studentRequestTypes(config) {
+  requireActiveTenant(config)
+  return ok(config, {
+    data: DOCUMENT_TYPES.map((type) => ({
+      label: type.label,
+      slug: type.slug,
+      auto_generatable: type.auto_generatable,
+      note: type.auto_generatable
+        ? null
+        : 'Prepared by a member of staff, so allow extra time.',
+    })),
+  })
 }
 
 function studentListDocuments(config) {
@@ -928,7 +1224,10 @@ function teacherAttendancePost(config, match) {
 }
 
 function adminAttendanceGet(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const classId = Number(config.params?.class_id)
   if (!classId) throw fail(422, 'The given data was invalid.', { class_id: ['The class id field is required.'] })
   const date = config.params?.date ?? new Date().toISOString().slice(0, 10)
@@ -936,7 +1235,10 @@ function adminAttendanceGet(config) {
 }
 
 function adminAttendancePost(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   upsertAttendance(school.id, body.class_id, body.date, body.records ?? [])
   return ok(config, rosterFor(body.class_id, school.id, body.date))
@@ -1089,7 +1391,10 @@ function teacherSaveGrades(config, match) {
 // ---- school admin ----
 
 function adminDashboard(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   return ok(config, {
     summary: {
       students: db.students.filter((student) => student.school_id === school.id).length,
@@ -1164,12 +1469,18 @@ function settingsUpdate(config) {
 }
 
 function adminListAcademicYears(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   return ok(config, { data: db.academicYears.filter((year) => year.school_id === school.id).sort((a, b) => b.name.localeCompare(a.name)) })
 }
 
 function adminCreateAcademicYear(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['name'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1182,14 +1493,20 @@ function adminCreateAcademicYear(config) {
 }
 
 function adminActivateYear(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   db.academicYears.forEach((item) => { if (item.school_id === school.id) item.is_current = item.id === id })
   return ok(config, { data: db.academicYears.find((item) => item.id === id) })
 }
 
 function adminUpdateAcademicYear(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const year = db.academicYears.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!year) throw fail(404, 'Not found.')
   const body = readBody(config)
@@ -1202,7 +1519,10 @@ function adminUpdateAcademicYear(config, match) {
 }
 
 function adminDeleteAcademicYear(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   const year = db.academicYears.find((item) => item.id === id && item.school_id === school.id)
   if (!year) throw fail(404, 'Not found.')
@@ -1212,12 +1532,18 @@ function adminDeleteAcademicYear(config, match) {
 }
 
 function adminListClasses(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   return ok(config, { data: db.classes.filter((klass) => klass.school_id === school.id).sort((a, b) => a.name.localeCompare(b.name)) })
 }
 
 function adminCreateClass(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['name'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1228,12 +1554,18 @@ function adminCreateClass(config) {
 }
 
 function adminListSubjects(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   return ok(config, { data: db.subjects.filter((subject) => subject.school_id === school.id).sort((a, b) => a.name.localeCompare(b.name)) })
 }
 
 function adminCreateSubject(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['name'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1243,7 +1575,10 @@ function adminCreateSubject(config) {
 }
 
 function adminUpdateSubject(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const subject = db.subjects.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!subject) throw fail(404, 'Not found.')
   const body = readBody(config)
@@ -1255,7 +1590,10 @@ function adminUpdateSubject(config, match) {
 }
 
 function adminDeleteSubject(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   db.subjects = db.subjects.filter((item) => !(item.id === id && item.school_id === school.id))
   db.teachingAssignments = db.teachingAssignments.filter((item) => !(item.subject_id === id && item.school_id === school.id))
@@ -1264,13 +1602,19 @@ function adminDeleteSubject(config, match) {
 }
 
 function adminListTeachers(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const rows = db.teachers.filter((teacher) => teacher.school_id === school.id).map(serializeTeacher)
   return ok(config, paginate(config, rows, ['name', 'email', 'staff_no']))
 }
 
 function adminCreateTeacher(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['name', 'email', 'password'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1283,13 +1627,19 @@ function adminCreateTeacher(config) {
 }
 
 function adminListStudents(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const rows = db.students.filter((student) => student.school_id === school.id).map(serializeStudent)
   return ok(config, paginate(config, rows, ['name', 'email', 'matricule']))
 }
 
 function adminCreateStudent(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['name', 'email', 'password', 'matricule', 'class_id'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1305,12 +1655,18 @@ function adminCreateStudent(config) {
 }
 
 function adminListAssignments(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   return ok(config, { data: db.teachingAssignments.filter((assignment) => assignment.school_id === school.id).map(serializeAssignment).sort((a, b) => b.id - a.id) })
 }
 
 function adminCreateAssignment(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['teacher_id', 'subject_id', 'class_id'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1327,14 +1683,20 @@ function adminCreateAssignment(config) {
 }
 
 function adminDeleteAssignment(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   db.teachingAssignments = db.teachingAssignments.filter((assignment) => !(assignment.id === id && assignment.school_id === school.id))
   return ok(config, { message: 'Assignment removed.' })
 }
 
 function adminTimetable(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const classId = Number(config.params?.class_id)
   if (!classId) throw fail(422, 'The given data was invalid.', { class_id: ['The class id field is required.'] })
   const klass = db.classes.find((item) => item.id === classId && item.school_id === school.id)
@@ -1342,32 +1704,123 @@ function adminTimetable(config) {
   return ok(config, { class: klass, academic_year: currentYearFor(school.id), entries: timetableFor(classId, school.id) })
 }
 
+/*
+| Timetable overlap detection. Mirrors TimetableService::assertNoOverlap: two
+| intervals clash when each starts before the other ends, and back to back is
+| not a clash. Compared on minutes since midnight, because "08:00" and "08:00:00"
+| do not compare correctly as strings at the boundary.
+*/
+const timeToMinutes = (value) => {
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(value ?? '').trim())
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null
+}
+
+const findTimetableClash = (schoolId, classId, yearId, day, start, end, ignoreId = null) => db.timetableEntries
+  .filter((entry) => entry.school_id === schoolId
+    && Number(entry.class_id) === Number(classId)
+    && Number(entry.academic_year_id) === Number(yearId)
+    && Number(entry.day) === Number(day)
+    && (ignoreId === null || entry.id !== Number(ignoreId)))
+  .find((entry) => start < timeToMinutes(entry.end) && end > timeToMinutes(entry.start))
+
+const assertNoTimetableClash = (schoolId, classId, yearId, body, ignoreId = null) => {
+  const start = timeToMinutes(body.start)
+  const end = timeToMinutes(body.end)
+  if (start === null || end === null) {
+    throw fail(422, 'The given data was invalid.', { start: ['Both a start and an end time are required.'] })
+  }
+  if (end <= start) {
+    throw fail(422, 'The given data was invalid.', { end: ['The end time must be after the start time.'] })
+  }
+  const clash = findTimetableClash(schoolId, classId, yearId, body.day, start, end, ignoreId)
+  if (!clash) return
+  const subject = db.subjects.find((item) => item.id === Number(clash.subject_id))
+  throw fail(422, 'The given data was invalid.', {
+    start: [`That clashes with ${subject?.name ?? 'another lesson'}, which already occupies `
+      + `${String(clash.start).slice(0, 5)}–${String(clash.end).slice(0, 5)} on this day.`],
+  })
+}
+
 function adminCreateTimetableEntry(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can edit the timetable.')
   const body = readBody(config)
   const errors = validate(body, ['class_id', 'subject_id', 'day', 'start', 'end'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
-  const entry = { id: nextMockId(), school_id: school.id, class_id: Number(body.class_id), academic_year_id: currentYearFor(school.id)?.id, subject_id: Number(body.subject_id), day: Number(body.day), start: body.start, end: body.end }
+  const yearId = currentYearFor(school.id)?.id
+  assertNoTimetableClash(school.id, Number(body.class_id), yearId, body)
+  const entry = { id: nextMockId(), school_id: school.id, class_id: Number(body.class_id), academic_year_id: yearId, subject_id: Number(body.subject_id), day: Number(body.day), start: body.start, end: body.end }
   db.timetableEntries.push(entry)
   return ok(config, { data: serializeTimetableEntry(entry) }, 201)
 }
 
+function adminUpdateTimetableEntry(config, match) {
+  const { user, school } = requireActiveTenant(config)
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can edit the timetable.')
+  const entry = db.timetableEntries.find(
+    (item) => item.id === Number(match[1]) && item.school_id === school.id,
+  )
+  if (!entry) throw fail(404, 'Not found.')
+  const body = readBody(config)
+  const errors = validate(body, ['class_id', 'subject_id', 'day', 'start', 'end'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  // Excluding the entry itself, so saving it unchanged is not a clash with itself.
+  assertNoTimetableClash(school.id, Number(body.class_id), entry.academic_year_id, body, entry.id)
+  Object.assign(entry, {
+    class_id: Number(body.class_id),
+    subject_id: Number(body.subject_id),
+    day: Number(body.day),
+    start: body.start,
+    end: body.end,
+  })
+  return ok(config, { data: serializeTimetableEntry(entry) })
+}
+
 function adminDeleteTimetableEntry(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   db.timetableEntries = db.timetableEntries.filter((entry) => !(entry.id === id && entry.school_id === school.id))
   return ok(config, { message: 'Timetable entry removed.' })
 }
 
 function adminListRequests(config) {
-  const { school } = requireActiveTenant(config)
+  const { school } = requireAdmin(config)
   const status = config.params?.status
+  // Laravel's $request->boolean() accepts 1, '1', true and 'true'; axios sends
+  // a bare number, which a string-only list silently drops.
+  const needsHuman = [1, '1', true, 'true'].includes(config.params?.needs_human)
   const rows = db.requests
     .filter((request) => request.school_id === school.id)
     .filter((request) => !status || request.status === status)
+    .filter((request) => !needsHuman || !documentTriage(request).auto_generatable)
     .map(serializeAdminRequest)
     .sort((a, b) => b.id - a.id)
   return ok(config, paginate(config, rows, ['reference', 'type']))
+}
+
+function adminRequestTriage(config) {
+  const { school } = requireAdmin(config)
+  const rows = db.requests.filter((request) => request.school_id === school.id)
+  const triaged = rows.map((request) => documentTriage(request))
+
+  return ok(config, {
+    data: {
+      total: rows.length,
+      auto_generatable: triaged.filter((row) => row.auto_generatable).length,
+      needs_human: triaged.filter((row) => !row.auto_generatable).length,
+      catalogue: DOCUMENT_TYPES.map((type) => ({
+        label: type.label,
+        slug: type.slug,
+        auto_generatable: type.auto_generatable,
+        note: type.auto_generatable
+          ? null
+          : 'Prepared by a member of staff, so allow extra time.',
+      })),
+    },
+  })
 }
 
 function notifyStudentAboutRequest(schoolId, studentId, request, status) {
@@ -1378,7 +1831,7 @@ function notifyStudentAboutRequest(schoolId, studentId, request, status) {
 }
 
 function adminUpdateRequest(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { school } = requireAdmin(config)
   const body = readBody(config)
   const request = db.requests.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!request) throw fail(404, 'Not found.')
@@ -1389,9 +1842,22 @@ function adminUpdateRequest(config, match) {
 }
 
 function adminGenerateDocument(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { school } = requireAdmin(config)
   const request = db.requests.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!request) throw fail(404, 'Not found.')
+
+  /*
+  | The bug this replaces: any type was turned into a document titled with the
+  | request's own words, the request was marked ready, and the student was told
+  | it was available to download. Refuse instead, and leave the request open.
+  */
+  const triage = documentTriage(request)
+  if (!triage.auto_generatable) {
+    throw fail(422, triage.reason ?? 'This document cannot be generated automatically.', {
+      type: [triage.reason ?? 'This document cannot be generated automatically.'],
+    })
+  }
+
   if (!db.documents.find((document) => document.request_id === request.id)) {
     db.documents.push({ id: nextMockId(), school_id: school.id, request_id: request.id, student_id: request.student_id, title: request.type, file_name: `${request.type.toLowerCase().replace(/\s+/g, '-')}-${request.reference.toLowerCase()}.pdf`, mime_type: 'application/pdf', size: 1840, created_at: new Date().toISOString() })
   }
@@ -1400,8 +1866,142 @@ function adminGenerateDocument(config, match) {
   return ok(config, { data: serializeAdminRequest(request) })
 }
 
+/*
+| Announcement drafting. Mirrors DeterministicAnnouncementDrafter clause for
+| clause: same salutations, same openings, same logistics wording, same limits.
+| There is no provider in the mock, so `source` is always `deterministic` and
+| `ai_available` is always false. Drafting persists nothing, exactly as the
+| Laravel endpoint does.
+*/
+/*
+| Two different truncations, because they answer two different questions.
+|
+| `truncateTo` bounds the result at `max` inclusive — used for the body, which
+| must fit `StoreAnnouncementRequest`'s max:5000 or the draft is unpublishable.
+|
+| `strLimit` mirrors Laravel's `Str::limit`, which truncates to the limit and
+| *then* appends the end marker, so it can return limit + 1 characters. Used for
+| `short_body`, whose whole purpose is to match what
+| `AnnouncementPublishedNotification::body()` already produces with
+| `Str::limit(..., 240)`.
+*/
+const truncateTo = (value, max, end = '…') => {
+  const text = String(value ?? '')
+  if (text.length <= max) return text
+  return `${text.slice(0, Math.max(0, max - end.length)).trimEnd()}${end}`
+}
+
+const strLimit = (value, limit, end = '…') => {
+  const text = String(value ?? '')
+  return text.length <= limit ? text : `${text.slice(0, limit).trimEnd()}${end}`
+}
+
+const ucfirst = (value) => {
+  const text = String(value ?? '').trim()
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+const lcfirst = (value) => {
+  const text = String(value ?? '').trim()
+  return text.charAt(0).toLowerCase() + text.slice(1)
+}
+
+const writeAnnouncementDraft = (input, userLocale) => {
+  const fr = String(userLocale ?? input.locale ?? 'en').toLowerCase().startsWith('fr')
+  const friendly = input.tone === 'friendly'
+  const subject = String(input.subject ?? '').trim()
+  const audience = ['all', 'students', 'teachers'].includes(input.audience) ? input.audience : 'all'
+  const points = Array.isArray(input.key_points)
+    ? input.key_points.map((point) => String(point ?? '').trim()).filter(Boolean)
+    : []
+  const dateText = input.date_text ? String(input.date_text).trim() : null
+  const venue = input.venue ? String(input.venue).trim() : null
+  const action = input.action_required ? String(input.action_required).trim() : null
+
+  const salutation = fr
+    ? { students: 'Chers élèves,', teachers: 'Chers collègues,', all: 'Chers élèves et membres du personnel,' }[audience]
+    : { students: 'Dear students,', teachers: 'Dear colleagues,', all: 'Dear students and staff,' }[audience]
+
+  const opening = fr
+    ? (friendly ? `Petit mot au sujet de ${lcfirst(subject)}.` : `Nous vous informons que ${lcfirst(subject)}.`)
+    : (friendly ? `A quick note about ${lcfirst(subject)}.` : `This is to inform you that ${lcfirst(subject)}.`)
+
+  const parts = [salutation, opening]
+
+  if (points.length > 0) {
+    const heading = fr ? 'Points importants :' : 'Key details:'
+    parts.push([heading, ...points.map((point) => `• ${ucfirst(point)}`)].join('\n'))
+  }
+
+  if (dateText || venue) {
+    if (fr) {
+      parts.push(dateText && venue
+        ? `Cela aura lieu le ${dateText}, à ${venue}.`
+        : dateText
+          ? `Cela aura lieu le ${dateText}.`
+          : `Cela aura lieu à ${venue}.`)
+    } else {
+      parts.push(dateText && venue
+        ? `It takes place on ${dateText} at ${venue}.`
+        : dateText
+          ? `It takes place on ${dateText}.`
+          : `It takes place at ${venue}.`)
+    }
+  }
+
+  if (action) parts.push(fr ? `Action requise : ${action}` : `Action required: ${action}`)
+
+  parts.push(fr
+    ? (friendly ? 'Merci et à bientôt !' : 'Merci de votre attention.')
+    : (friendly ? 'Thanks — see you there!' : 'Thank you for your attention.'))
+
+  const body = truncateTo(parts.join('\n\n'), 5000)
+
+  return {
+    title: ucfirst(subject),
+    body,
+    short_body: strLimit(body.replace(/\s+/g, ' ').trim(), 240),
+  }
+}
+
+function adminDraftAnnouncement(config) {
+  const { user } = requireActiveTenant(config)
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can draft announcements.')
+
+  const body = readBody(config)
+  const errors = validate(body, ['subject'])
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+  if (!['all', 'students', 'teachers'].includes(body.audience ?? 'all')) {
+    throw fail(422, 'The given data was invalid.', { audience: ['The selected audience is invalid.'] })
+  }
+  if (!['formal', 'friendly'].includes(body.tone ?? 'formal')) {
+    throw fail(422, 'The given data was invalid.', { tone: ['The selected tone is invalid.'] })
+  }
+  if (body.locale != null && !['en', 'fr'].includes(body.locale)) {
+    throw fail(422, 'The given data was invalid.', { locale: ['The selected locale is invalid.'] })
+  }
+  if (Array.isArray(body.key_points) && body.key_points.length > 10) {
+    throw fail(422, 'The given data was invalid.', { key_points: ['At most 10 key points.'] })
+  }
+
+  const draft = writeAnnouncementDraft(body, user.locale)
+
+  // No row is written and nobody is notified — the admin publishes separately.
+  return ok(config, {
+    data: {
+      ...draft,
+      source: 'deterministic',
+      locale: String(user.locale ?? body.locale ?? 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en',
+      ai_available: false,
+    },
+  })
+}
+
 function adminCreateAnnouncement(config) {
   const { user, school } = requireActiveTenant(config)
+  // Laravel mounts this under the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription, so the role has to be checked here.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can publish announcements.')
   const body = readBody(config)
   const errors = validate(body, ['title', 'body'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1527,13 +2127,19 @@ function superAdminListPayments(config) {
 // ---- semesters / grade components / exams / import (admin) ----
 
 function adminListSemesters(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const year = currentYearFor(school.id)
   return ok(config, { data: year ? semestersFor(school.id, year.id) : [], academic_year: year })
 }
 
 function adminCreateSemester(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['academic_year_id', 'name'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1557,7 +2163,10 @@ function adminCreateSemester(config) {
 }
 
 function adminActivateSemester(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   const semester = byId(db.semesters, id)
   if (!semester || semester.school_id !== school.id) throw fail(404, 'Not found.')
@@ -1568,14 +2177,20 @@ function adminActivateSemester(config, match) {
 }
 
 function adminDeleteSemester(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   db.semesters = db.semesters.filter((item) => !(item.id === id && item.school_id === school.id))
   return ok(config, { message: 'Semester removed.' })
 }
 
 function adminListGradeComponents(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const defaults = db.gradeComponents.filter((component) => component.school_id === school.id && component.subject_id == null)
   const bySubject = {}
   for (const component of db.gradeComponents.filter((component) => component.school_id === school.id && component.subject_id != null)) {
@@ -1585,7 +2200,10 @@ function adminListGradeComponents(config) {
 }
 
 function adminCreateGradeComponent(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['name', 'weight'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1602,7 +2220,10 @@ function adminCreateGradeComponent(config) {
 }
 
 function adminUpdateGradeComponent(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const component = db.gradeComponents.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!component) throw fail(404, 'Not found.')
   const body = readBody(config)
@@ -1613,14 +2234,20 @@ function adminUpdateGradeComponent(config, match) {
 }
 
 function adminDeleteGradeComponent(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   db.gradeComponents = db.gradeComponents.filter((item) => !(item.id === id && item.school_id === school.id))
   return ok(config, { message: 'Component removed.' })
 }
 
 function adminListExams(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const classId = config.params?.class_id
   const exams = db.exams
     .filter((exam) => exam.school_id === school.id && (!classId || exam.class_id === Number(classId)))
@@ -1630,7 +2257,10 @@ function adminListExams(config) {
 }
 
 function adminCreateExam(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const body = readBody(config)
   const errors = validate(body, ['subject_id', 'class_id', 'date', 'start', 'end'])
   if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
@@ -1651,14 +2281,20 @@ function adminCreateExam(config) {
 }
 
 function adminDeleteExam(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const id = Number(match[1])
   db.exams = db.exams.filter((item) => !(item.id === id && item.school_id === school.id))
   return ok(config, { message: 'Exam session removed.' })
 }
 
 function adminExamRanking(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const classId = Number(config.params?.class_id)
   const subjectId = Number(config.params?.subject_id)
   const semesterId = config.params?.semester_id
@@ -1706,11 +2342,294 @@ function teacherListExams(config) {
   return ok(config, { data: exams })
 }
 
-function adminImport(config) {
-  const { school } = requireActiveTenant(config)
+/*
+| CSV import mapping. Mirrors DeterministicHeaderMapper, ValueNormaliser and
+| ClassResolver: same alias table, same scored fuzzy match with tie-break-to-none,
+| same phone normalisation, same refusal to guess an ambiguous class. There is no
+| provider in the mock, so `source` is always `deterministic`.
+*/
+const IMPORT_FIELDS = {
+  students: ['name', 'email', 'matricule', 'class', 'academic_year', 'phone', 'password'],
+  teachers: ['name', 'email', 'staff_no', 'phone', 'password'],
+}
+
+const HEADER_ALIASES = {
+  name: ['name', 'full name', 'names', 'student name', 'pupil name', 'surname', 'name of student',
+    'nom', 'noms', 'nom complet', 'nom et prenom', 'nom de l eleve', 'eleve', 'nom et prenoms'],
+  email: ['email', 'e mail', 'mail', 'electronic mail', 'email address', 'courriel',
+    'adresse courriel', 'adresse e mail', 'adresse electronique', 'mel'],
+  matricule: ['matricule', 'matricule number', 'student number', 'student id', 'registration number',
+    'reg no', 'numero d eleve', 'numero eleve', 'code eleve', 'matricule eleve'],
+  staff_no: ['staff no', 'staff number', 'staff id', 'teacher number', 'teacher id',
+    'numero du personnel', 'matricule enseignant', 'numero enseignant'],
+  class: ['class', 'class name', 'classe', 'level', 'niveau', 'form', 'nom de la classe', 'classe eleve'],
+  academic_year: ['academic year', 'year', 'session', 'annee', 'annee scolaire', 'exercice'],
+  phone: ['phone', 'phone number', 'telephone', 'tel', 'mobile', 'cell', 'contact',
+    'numero de telephone', 'telephone portable'],
+  password: ['password', 'temporary password', 'mot de passe', 'mot de passe temporaire'],
+}
+
+/*
+| Folding accents is for matching headers and class names only — never for
+| values. Stripping the accents out of a pupil's name would corrupt the record
+| being imported. `String.prototype.normalize` + a combining-mark strip matches
+| Laravel's Str::ascii closely enough for Latin-1 school exports.
+*/
+const importMatchKey = (value) => String(value ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim()
+
+const importTokens = (value) => importMatchKey(value).split(' ').filter(Boolean)
+
+const mapImportHeaders = (headers, fields) => {
+  const mapping = {}
+  const confidence = {}
+  const conflicts = {}
+  const claimedKeys = []
+
+  const exactField = (header) => {
+    const key = importMatchKey(header)
+    for (const field of fields) {
+      for (const alias of HEADER_ALIASES[field] ?? []) {
+        if (importMatchKey(alias) === key) return field
+      }
+    }
+    return null
+  }
+
+  for (const header of headers) {
+    const field = exactField(header)
+    if (field === null) continue
+    if (mapping[field]) {
+      ;(conflicts[field] ??= []).push(header)
+      continue
+    }
+    mapping[field] = header
+    confidence[field] = 'exact'
+    claimedKeys.push(importMatchKey(header))
+  }
+
+  for (const header of headers) {
+    if (claimedKeys.includes(importMatchKey(header))) continue
+
+    const tokens = importTokens(header)
+    if (tokens.length === 0) continue
+
+    const scores = {}
+    for (const field of fields) {
+      if (mapping[field]) continue
+      const vocabulary = new Set((HEADER_ALIASES[field] ?? []).flatMap(importTokens))
+      const score = tokens.filter((token) => vocabulary.has(token)).length
+      if (score > 0) scores[field] = score
+    }
+
+    const entries = Object.entries(scores)
+    if (entries.length === 0) continue
+    const best = Math.max(...entries.map(([, score]) => score))
+    const winners = entries.filter(([, score]) => score === best).map(([field]) => field)
+
+    // A tie is a guess waiting to happen, so it stays unmapped.
+    if (winners.length !== 1) continue
+    if (best < Math.ceil(tokens.length / 2)) continue
+
+    mapping[winners[0]] = header
+    confidence[winners[0]] = 'fuzzy'
+    claimedKeys.push(importMatchKey(header))
+  }
+
+  return {
+    mapping,
+    confidence,
+    conflicts,
+    unmapped: headers.filter((header) => !Object.values(mapping).includes(header)),
+  }
+}
+
+const normaliseImportPhone = (value) => {
+  const trimmed = String(value ?? '').trim()
+  if (trimmed === '') return null
+  const digits = trimmed.replace(/\D+/g, '')
+  if (digits === '') return trimmed
+  let local = null
+  if (digits.startsWith('00237')) local = digits.slice(5)
+  else if (digits.startsWith('237') && digits.length === 12) local = digits.slice(3)
+  else if (digits.length === 9) local = digits
+  // Anything else is left exactly as written: a wrong guess here would mean
+  // texting whoever happens to own that number.
+  return local === null ? trimmed : `+237${local}`
+}
+
+const normaliseImportEmail = (value) => {
+  const trimmed = String(value ?? '').trim()
+  return trimmed === '' ? null : trimmed.toLowerCase()
+}
+
+const normaliseImportText = (value) => {
+  const trimmed = String(value ?? '').trim()
+  return trimmed === '' ? null : trimmed
+}
+
+const resolveImportClass = (schoolId, label) => {
+  const key = importMatchKey(label)
+  if (key === '') return { class_id: null, matched: null, ambiguous: false }
+
+  const candidates = db.classes.filter((klass) => klass.school_id === schoolId)
+  const exact = candidates.filter((klass) => importMatchKey(klass.name) === key)
+  if (exact.length === 1) return { class_id: exact[0].id, matched: exact[0].name, ambiguous: false }
+  if (exact.length > 1) return { class_id: null, matched: null, ambiguous: true }
+
+  const contained = candidates.filter(
+    (klass) => importMatchKey(klass.name) !== '' && importMatchKey(klass.name).includes(key),
+  )
+  if (contained.length === 1) return { class_id: contained[0].id, matched: contained[0].name, ambiguous: false }
+  return contained.length > 1
+    ? { class_id: null, matched: null, ambiguous: true }
+    : { class_id: null, matched: null, ambiguous: false }
+}
+
+const applyImportMapping = (row, mapping, type) => {
+  const pick = (field) => (mapping[field] ? row[mapping[field]] : undefined)
+  const values = {
+    name: normaliseImportText(pick('name')),
+    email: normaliseImportEmail(pick('email')),
+    phone: normaliseImportPhone(pick('phone')),
+    password: normaliseImportText(pick('password')),
+  }
+  if (type === 'teachers') {
+    values.staff_no = normaliseImportText(pick('staff_no'))
+    return values
+  }
+  values.matricule = normaliseImportText(pick('matricule'))
+  values.class = normaliseImportText(pick('class'))
+  values.academic_year = normaliseImportText(pick('academic_year'))
+  return values
+}
+
+const importRowWarnings = (values, resolved, type) => {
+  const warnings = []
+  if (!values.name) warnings.push('No name — no column mapped to "name", or the cell is empty.')
+  if (!values.email) {
+    warnings.push('No email address.')
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
+    warnings.push(`"${values.email}" is not a valid email address.`)
+  }
+  if (type === 'teachers') return warnings
+  if (resolved.ambiguous) {
+    warnings.push(`The class "${values.class}" matches more than one class in this school.`)
+  } else if (resolved.class_id === null) {
+    warnings.push(`No class in this school matches "${values.class}".`)
+  }
+  return warnings
+}
+
+function adminImportPreview(config) {
+  const { user, school } = requireActiveTenant(config)
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can preview an import.')
+
   const body = readBody(config)
-  const type = body.type
-  const rows = body.rows ?? []
+  const type = body.type === 'teachers' ? 'teachers' : 'students'
+  const rows = Array.isArray(body.rows) ? body.rows : []
+
+  if (rows.length === 0) throw fail(422, 'The given data was invalid.', { rows: ['Send at least one row.'] })
+  if (rows.length > 500) {
+    throw fail(422, 'The given data was invalid.', { rows: ['Preview at most 500 rows at a time.'] })
+  }
+
+  const headers = Object.keys(rows.find((row) => row && typeof row === 'object') ?? {})
+  const { mapping, confidence, conflicts, unmapped } = mapImportHeaders(headers, IMPORT_FIELDS[type])
+
+  const previewRows = rows.map((row, index) => {
+    const values = applyImportMapping(row, mapping, type)
+    const resolved = type === 'students'
+      ? resolveImportClass(school.id, values.class ?? '')
+      : { class_id: null, matched: null, ambiguous: false }
+    const warnings = importRowWarnings(values, resolved, type)
+
+    return {
+      row: index + 1,
+      values: {
+        name: values.name ?? null,
+        email: values.email ?? null,
+        matricule: values.matricule ?? null,
+        staff_no: values.staff_no ?? null,
+        phone: values.phone ?? null,
+        class_id: resolved.class_id,
+      },
+      class: { label: values.class ?? null, matched: resolved.matched, ambiguous: resolved.ambiguous },
+      warnings,
+    }
+  })
+
+  const importable = previewRows.filter((row) => row.warnings.length === 0).length
+
+  // Nothing is written. The administrator confirms and POSTs to /admin/import.
+  return ok(config, {
+    data: {
+      type,
+      source: 'deterministic',
+      fields: IMPORT_FIELDS[type],
+      headers,
+      mapping,
+      confidence,
+      unmapped,
+      conflicts,
+      available_classes: type === 'students'
+        ? db.classes
+          .filter((klass) => klass.school_id === school.id)
+          .map((klass) => ({ id: klass.id, name: klass.name }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+        : [],
+      rows: previewRows,
+      summary: { total: previewRows.length, importable, needs_attention: previewRows.length - importable },
+    },
+  })
+}
+
+function adminImport(config) {
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts this under the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can run an import.')
+
+  const body = readBody(config)
+  const type = body.type === 'teachers' ? 'teachers' : 'students'
+  let rows = body.rows ?? []
+
+  if (body.mapping && typeof body.mapping === 'object') {
+    const fields = IMPORT_FIELDS[type]
+    const headers = Object.keys(rows.find((row) => row && typeof row === 'object') ?? {})
+
+    for (const [field, header] of Object.entries(body.mapping)) {
+      if (!fields.includes(field)) {
+        throw fail(422, 'The given data was invalid.', {
+          [`mapping.${field}`]: [`"${field}" is not a field a ${type} import accepts.`],
+        })
+      }
+      // Without this, a mapping pointing at a column the file does not have
+      // would import every row as null without a single error.
+      if (!headers.includes(header)) {
+        throw fail(422, 'The given data was invalid.', {
+          [`mapping.${field}`]: [`No column named "${header}" was sent in rows.`],
+        })
+      }
+    }
+
+    rows = rows.map((row) => {
+      const values = applyImportMapping(row, body.mapping, type)
+      const resolved = type === 'students' ? resolveImportClass(school.id, values.class ?? '') : null
+      const clean = {}
+      for (const [key, value] of Object.entries(values)) {
+        if (value === null || key === 'class' || key === 'academic_year') continue
+        clean[key] = value
+      }
+      if (resolved) clean.class_id = resolved.class_id
+      return clean
+    })
+  }
+
   let created = 0
   const errors = []
 
@@ -1881,14 +2800,20 @@ function studentTranscriptPdf(config) {
 }
 
 function adminStudentReportCardPdf(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const student = db.students.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!student) throw fail(404, 'Not found.')
   return pdfResponse(config, `report-card-${student.id}.pdf`, reportCardLines(student, school))
 }
 
 function adminStudentTranscriptPdf(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const student = db.students.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!student) throw fail(404, 'Not found.')
   return pdfResponse(config, `transcript-${student.id}.pdf`, [
@@ -1900,7 +2825,10 @@ function adminStudentTranscriptPdf(config, match) {
 }
 
 function adminClassReportCards(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const klass = db.classes.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!klass) throw fail(404, 'Not found.')
 
@@ -1915,7 +2843,10 @@ function adminClassReportCards(config, match) {
 }
 
 function adminPaymentReceiptPdf(config, match) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const payment = db.payments.find((item) => item.id === Number(match[1]) && item.school_id === school.id)
   if (!payment) throw fail(404, 'Not found.')
 
@@ -1929,7 +2860,10 @@ function adminPaymentReceiptPdf(config, match) {
 }
 
 function adminAuditLogs(config) {
-  const { school } = requireActiveTenant(config)
+  const { user, school } = requireActiveTenant(config)
+  // Laravel mounts every /admin route inside the role:admin group; requireActiveTenant only
+  // checks the tenant and the subscription.
+  if (user.role !== 'admin') throw fail(403, 'Only administrators can do this.')
   const rows = (db.auditLogs ?? [])
     .filter((entry) => entry.school_id === school.id)
     .map((entry) => ({
@@ -1986,6 +2920,2491 @@ function superAdminPaymentReceiptPdf(config, match) {
   ])
 }
 
+// ---------------------------------------------------------------------------
+// Homework — mirrors App\Services\HomeworkService.
+//
+// Same two invariants as the backend: a teacher only touches homework inside a
+// class/subject they hold a TeachingAssignment for, and a student only sees
+// published homework for the class they are enrolled in.
+// ---------------------------------------------------------------------------
+
+const homeworkTeacher = (config) => {
+  const { user, school } = requireActiveTenant(config)
+  const teacher = teacherForUser(user.id, school.id)
+  if (!teacher) throw fail(403, 'No teacher profile is attached to this account.')
+  return { user, school, teacher }
+}
+
+const homeworkStudent = (config) => {
+  const { user, school } = requireActiveTenant(config)
+  const student = studentForUser(user.id, school.id)
+  if (!student) throw fail(403, 'No student profile is attached to this account.')
+  return { user, school, student }
+}
+
+/*
+ * Scoped lookups. The backend gets row isolation for free from TenantScope — a
+ * foreign school's id simply is not found, so it 404s rather than 403s. The
+ * mock has to reproduce that explicitly, or a leaked id would expose another
+ * school's record.
+ */
+const scopedFind = (list, id, schoolId) =>
+  list.find((row) => Number(row.id) === Number(id) && row.school_id === schoolId)
+
+const findHomework = (config, id) => {
+  const { school } = requireTenant(config)
+  const homework = scopedFind(db.homeworkAssignments, id, school.id)
+  if (!homework) throw fail(404, 'No query results for model [HomeworkAssignment].')
+  return homework
+}
+
+const findSubmission = (config, id) => {
+  const { school } = requireTenant(config)
+  const submission = scopedFind(db.homeworkSubmissions, id, school.id)
+  if (!submission) throw fail(404, 'No query results for model [HomeworkSubmission].')
+  return submission
+}
+
+/** Mirrors HomeworkService::assertAssigned(). */
+const assertTeacherAssigned = (teacher, classId, subjectId, yearId) => {
+  const assigned = db.teachingAssignments.some(
+    (row) =>
+      row.teacher_id === teacher.id &&
+      row.class_id === Number(classId) &&
+      row.subject_id === Number(subjectId) &&
+      row.academic_year_id === Number(yearId),
+  )
+  if (!assigned) throw fail(403, 'You are not assigned to teach this subject in this class.')
+}
+
+const assertOwnsHomework = (teacher, homework) => {
+  if (homework.teacher_id !== teacher.id) throw fail(403, 'This homework belongs to another teacher.')
+}
+
+const submissionFor = (homeworkId, studentId) =>
+  db.homeworkSubmissions.find(
+    (row) => row.homework_assignment_id === Number(homeworkId) && row.student_id === Number(studentId),
+  )
+
+const enrolledStudentIds = (classId, yearId) =>
+  db.enrollments
+    .filter((row) => row.class_id === Number(classId) && row.academic_year_id === Number(yearId))
+    .map((row) => row.student_id)
+
+const homeworkWithCounts = (homework) => {
+  const submissions = db.homeworkSubmissions.filter(
+    (row) => row.homework_assignment_id === homework.id,
+  )
+  return {
+    ...serializeHomework(homework),
+    submissions_count: submissions.length,
+    graded_count: submissions.filter((row) => row.score !== null && row.score !== undefined).length,
+  }
+}
+
+const studentHomeworkSummary = (student) => {
+  let pending = 0
+  let awaiting = 0
+  let graded = 0
+  for (const homework of studentHomeworkRows(student)) {
+    const submission = submissionFor(homework.id, student.id)
+    if (submission && submission.score !== null && submission.score !== undefined) graded += 1
+    else if (submission) awaiting += 1
+    else if (serializeHomework(homework).is_open) pending += 1
+  }
+  return { pending, awaiting_grade: awaiting, graded }
+}
+
+const studentHomeworkRows = (student) => {
+  const year = currentYearFor(student.school_id)
+  const enrollment = db.enrollments.find(
+    (row) => row.student_id === student.id && row.academic_year_id === year?.id,
+  )
+  if (!enrollment) return []
+  return db.homeworkAssignments.filter(
+    (homework) =>
+      homework.class_id === enrollment.class_id &&
+      homework.academic_year_id === year.id &&
+      homework.is_published,
+  )
+}
+
+function teacherHomeworkIndex(config) {
+  const { teacher } = homeworkTeacher(config)
+  const rows = db.homeworkAssignments
+    .filter((homework) => homework.teacher_id === teacher.id)
+    .sort((a, b) => new Date(b.due_at) - new Date(a.due_at))
+    .map(homeworkWithCounts)
+
+  return ok(config, paginate(config, rows, ['title', 'instructions']))
+}
+
+async function teacherHomeworkStore(config) {
+  const { school, teacher, user } = homeworkTeacher(config)
+  const { fields: body, files } = readMultipart(config)
+
+  validate(body, ['class_id', 'subject_id', 'title', 'max_score', 'due_at'])
+
+  const klass = byId(db.classes, body.class_id)
+  const subject = byId(db.subjects, body.subject_id)
+  if (!klass || klass.school_id !== school.id) throw fail(422, 'The selected class belongs to another school.')
+  if (!subject || subject.school_id !== school.id) throw fail(422, 'The selected subject belongs to another school.')
+
+  const year = byId(db.academicYears, body.academic_year_id) ?? currentYearFor(school.id)
+  if (!year) throw fail(409, 'No active academic year is configured.')
+
+  assertTeacherAssigned(teacher, klass.id, subject.id, year.id)
+
+  if (new Date(body.due_at).getTime() <= Date.now()) {
+    throw fail(422, 'The deadline must be in the future.', { due_at: ['The deadline must be in the future.'] })
+  }
+
+  const duplicate = db.homeworkAssignments.some(
+    (row) =>
+      row.class_id === klass.id &&
+      row.subject_id === subject.id &&
+      row.academic_year_id === year.id &&
+      row.title.toLowerCase() === String(body.title).toLowerCase(),
+  )
+  if (duplicate) {
+    throw fail(422, 'Homework with this title already exists for that class and subject.', {
+      title: ['Homework with this title already exists for that class and subject.'],
+    })
+  }
+
+  const homework = {
+    id: nextMockId(),
+    school_id: school.id,
+    teacher_id: teacher.id,
+    subject_id: subject.id,
+    class_id: klass.id,
+    academic_year_id: year.id,
+    semester_id: body.semester_id ? Number(body.semester_id) : (currentSemesterFor(school.id, year.id)?.id ?? null),
+    title: body.title,
+    instructions: body.instructions ?? null,
+    max_score: Number(body.max_score),
+    due_at: body.due_at,
+    is_published: false,
+    published_at: null,
+    created_at: new Date().toISOString(),
+  }
+  db.homeworkAssignments.push(homework)
+
+  await attachFiles(HOMEWORK_TYPE, homework.id, school.id, files, 'teacher', 'class', user.id)
+
+  return ok(config, { data: serializeHomework(homework) }, 201)
+}
+
+function teacherHomeworkShow(config, match) {
+  const { teacher } = homeworkTeacher(config)
+  const homework = findHomework(config, match[1])
+  assertOwnsHomework(teacher, homework)
+  return ok(config, { data: homeworkWithCounts(homework) })
+}
+
+async function teacherHomeworkUpdate(config, match) {
+  const { school, teacher, user } = homeworkTeacher(config)
+  const homework = findHomework(config, match[1])
+  assertOwnsHomework(teacher, homework)
+
+  // The SPA posts multipart with `_method=PUT` when files are attached.
+  const { fields: body, files } = readMultipart(config)
+  if (body.title !== undefined) homework.title = body.title
+  if (body.instructions !== undefined) homework.instructions = body.instructions
+  if (body.max_score !== undefined) homework.max_score = Number(body.max_score)
+  if (body.due_at !== undefined) homework.due_at = body.due_at
+
+  await attachFiles(HOMEWORK_TYPE, homework.id, school.id, files, 'teacher', 'class', user.id)
+
+  return ok(config, { data: homeworkWithCounts(homework) })
+}
+
+function teacherHomeworkDestroy(config, match) {
+  const { teacher } = homeworkTeacher(config)
+  const homework = findHomework(config, match[1])
+  assertOwnsHomework(teacher, homework)
+
+  db.homeworkAssignments = db.homeworkAssignments.filter((row) => row.id !== homework.id)
+  db.homeworkSubmissions = db.homeworkSubmissions.filter(
+    (row) => row.homework_assignment_id !== homework.id,
+  )
+
+  return ok(config, { message: 'Homework deleted.' })
+}
+
+function teacherHomeworkPublish(config, match) {
+  const { teacher } = homeworkTeacher(config)
+  const homework = findHomework(config, match[1])
+  assertOwnsHomework(teacher, homework)
+
+  if (!homework.is_published) {
+    homework.is_published = true
+    homework.published_at = new Date().toISOString()
+
+    // Notify every enrolled student, as HomeworkService::publish() does.
+    for (const studentId of enrolledStudentIds(homework.class_id, homework.academic_year_id)) {
+      const student = byId(db.students, studentId)
+      const userId = student?.user_id
+      if (!userId) continue
+      db.notifications.unshift({
+        id: nextMockId(),
+        school_id: homework.school_id,
+        user_id: userId,
+        type: 'homework_published',
+        title: `New homework: ${homework.title}`,
+        message: `New ${byId(db.subjects, homework.subject_id)?.name} homework for ${byId(db.classes, homework.class_id)?.name}, due ${homework.due_at.slice(0, 10)}.`,
+        data: { homework_id: homework.id },
+        read_at: null,
+        created_at: new Date().toISOString(),
+      })
+    }
+  }
+
+  return ok(config, { data: homeworkWithCounts(homework) })
+}
+
+function teacherHomeworkUnpublish(config, match) {
+  const { teacher } = homeworkTeacher(config)
+  const homework = findHomework(config, match[1])
+  assertOwnsHomework(teacher, homework)
+  homework.is_published = false
+  return ok(config, { data: homeworkWithCounts(homework) })
+}
+
+function teacherHomeworkSubmissions(config, match) {
+  const { teacher } = homeworkTeacher(config)
+  const homework = findHomework(config, match[1])
+  assertOwnsHomework(teacher, homework)
+
+  const ids = enrolledStudentIds(homework.class_id, homework.academic_year_id)
+
+  const students = ids
+    .map((studentId) => {
+      const student = byId(db.students, studentId)
+      const submission = submissionFor(homework.id, studentId)
+      return {
+        student_id: studentId,
+        name: userName(student?.user_id),
+        matricule: student?.matricule ?? null,
+        submission: submission ? serializeSubmission(submission) : null,
+        status: submission
+          ? submission.score !== null && submission.score !== undefined
+            ? 'graded'
+            : submission.is_late
+              ? 'late'
+              : 'submitted'
+          : 'not_submitted',
+        score: submission?.score ?? null,
+        max_score: homework.max_score,
+      }
+    })
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+
+  return ok(config, {
+    assignment: homeworkWithCounts(homework),
+    students,
+    stats: {
+      total: students.length,
+      submitted: students.filter((row) => row.submission).length,
+      graded: students.filter((row) => row.submission && row.submission.score !== null).length,
+      late: students.filter((row) => row.submission?.is_late).length,
+    },
+  })
+}
+
+function teacherSubmissionShow(config, match) {
+  const { teacher } = homeworkTeacher(config)
+  const submission = findSubmission(config, match[1])
+  const homework = findHomework(config, submission.homework_assignment_id)
+  assertOwnsHomework(teacher, homework)
+
+  return ok(config, { data: serializeSubmission(submission) })
+}
+
+function teacherSubmissionGrade(config, match) {
+  const { teacher } = homeworkTeacher(config)
+  const submission = findSubmission(config, match[1])
+  const homework = findHomework(config, submission.homework_assignment_id)
+  assertOwnsHomework(teacher, homework)
+
+  const body = readBody(config)
+  validate(body, ['score'])
+
+  const score = Number(body.score)
+  if (Number.isNaN(score) || score < 0) throw fail(422, 'The score cannot be negative.', { score: ['The score cannot be negative.'] })
+  if (score > homework.max_score) {
+    throw fail(422, `The score cannot exceed the maximum of ${homework.max_score}.`, {
+      score: [`The score cannot exceed the maximum of ${homework.max_score}.`],
+    })
+  }
+
+  submission.score = score
+  submission.feedback = body.feedback ?? null
+  submission.graded_by = teacher.id
+  submission.graded_at = new Date().toISOString()
+
+  const student = byId(db.students, submission.student_id)
+  if (student?.user_id) {
+    db.notifications.unshift({
+      id: nextMockId(),
+      school_id: submission.school_id,
+      user_id: student.user_id,
+      type: 'homework_graded',
+      title: 'Your homework has been graded',
+      message: `"${homework.title}" was marked ${score}/${homework.max_score}.`,
+      data: { homework_id: homework.id, score },
+      read_at: null,
+      created_at: new Date().toISOString(),
+    })
+  }
+
+  return ok(config, { data: serializeSubmission(submission) })
+}
+
+// ---------------------------------------------------------------------------
+// Attachments — mirrors App\Services\AttachmentService.
+//
+// The mock has no disk, so uploads are read into `fileStore` and handed back as
+// real Blobs. Same authorization rules as the backend: a class brief is open to
+// every enrolled student, a submission is private to its author and the teacher
+// who set the work.
+// ---------------------------------------------------------------------------
+
+const ATTACHMENT_MIMES = ['pdf', 'doc', 'docx', 'odt', 'rtf', 'txt', 'png', 'jpg', 'jpeg']
+const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+const ATTACHMENT_MAX_FILES = 5
+
+/**
+ * Accepts FormData or a plain object and returns `{ fields, files }`.
+ * The real adapter serialises FormData itself; here we read it directly.
+ */
+/**
+ * Rebuilds `a[0][b]` keys into a nested object, the way PHP parses them.
+ * Only used by the mock: a real Laravel request gets this for free.
+ */
+const unflatten = (fields) => {
+  const root = {}
+
+  for (const [rawKey, value] of Object.entries(fields)) {
+    const path = [...rawKey.matchAll(/([^[\]]+)/g)].map((match) => match[1])
+
+    // No brackets — nothing to rebuild.
+    if (path.length === 1) {
+      root[rawKey] = value
+      continue
+    }
+
+    let node = root
+    for (let index = 0; index < path.length - 1; index += 1) {
+      const key = path[index]
+      if (node[key] === undefined) node[key] = /^\d+$/.test(path[index + 1]) ? [] : {}
+      node = node[key]
+    }
+
+    node[path[path.length - 1]] = value
+  }
+
+  return root
+}
+
+const readMultipart = (config) => {
+  const raw = config.data
+
+  if (typeof FormData !== 'undefined' && raw instanceof FormData) {
+    const fields = {}
+    const files = []
+
+    for (const [key, value] of raw.entries()) {
+      if (value && typeof value === 'object' && 'arrayBuffer' in value) {
+        files.push(value)
+      } else {
+        fields[key] = value
+      }
+    }
+
+    // `questions[0][prompt]` style keys arrive flat; rebuild the nesting PHP
+    // would give a real Laravel request.
+    return { fields: unflatten(fields), files }
+  }
+
+  return { fields: readBody(config), files: [] }
+}
+
+const attachFiles = async (attachableType, attachableId, schoolId, files, role, visibility, userId) => {
+  const existing = db.attachments.filter(
+    (row) => row.attachable_type === attachableType && row.attachable_id === Number(attachableId),
+  ).length
+
+  const accepted = []
+
+  for (const file of files.slice(0, Math.max(ATTACHMENT_MAX_FILES - existing, 0))) {
+    const name = file.name ?? 'file'
+    const extension = String(name.split('.').pop() ?? '').toLowerCase()
+
+    if (!ATTACHMENT_MIMES.includes(extension)) {
+      throw fail(422, `That file type is not allowed. Accepted: ${ATTACHMENT_MIMES.join(', ')}.`, {
+        attachments: [`The ${name} file type is not allowed.`],
+      })
+    }
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      throw fail(422, 'Each file must be 10 MB or smaller.', { attachments: ['Each file must be 10 MB or smaller.'] })
+    }
+
+    const attachment = {
+      id: nextMockId(),
+      school_id: schoolId,
+      attachable_type: attachableType,
+      attachable_id: Number(attachableId),
+      uploaded_by_role: role,
+      uploaded_by: userId,
+      file_name: name,
+      mime_type: file.type || 'application/octet-stream',
+      size: file.size,
+      disk: 'local',
+      path: `mock/${attachableType.split('\\').pop().toLowerCase()}-${nextMockId()}.${extension}`,
+      visibility,
+      created_at: new Date().toISOString(),
+    }
+
+    storeFile(attachment.id, new Blob([await file.arrayBuffer()], { type: attachment.mime_type }))
+    db.attachments.push(attachment)
+    accepted.push(attachment)
+  }
+
+  return accepted.map(serializeAttachment)
+}
+
+/** Mirrors AttachmentService::authorize(). */
+const authorizeAttachment = (attachment, user, schoolId) => {
+  // Resolve the owning record the same way HasAttachments does server-side:
+  // a lesson owns itself, a submission defers to the homework it belongs to.
+  let owner = null
+  let ownerClassId = null
+  let ownerYearId = null
+
+  // Every lookup is school-scoped: an attachment id from another tenant must
+  // not resolve here any more than it would through the model's TenantScope.
+  if (attachment.attachable_type === HOMEWORK_TYPE) {
+    owner = scopedFind(db.homeworkAssignments, attachment.attachable_id, schoolId)
+    ownerClassId = owner?.class_id
+    ownerYearId = owner?.academic_year_id
+  } else if (attachment.attachable_type === SUBMISSION_TYPE) {
+    const submission = scopedFind(db.homeworkSubmissions, attachment.attachable_id, schoolId)
+    owner = submission ? scopedFind(db.homeworkAssignments, submission.homework_assignment_id, schoolId) : null
+    ownerClassId = owner?.class_id
+    ownerYearId = owner?.academic_year_id
+  } else if (attachment.attachable_type === LESSON_TYPE) {
+    owner = scopedFind(db.lessons, attachment.attachable_id, schoolId)
+    ownerClassId = owner?.class_id
+    ownerYearId = owner?.academic_year_id
+  } else if (attachment.attachable_type === QUIZ_TYPE) {
+    owner = scopedFind(db.quizzes, attachment.attachable_id, schoolId)
+    ownerClassId = owner?.class_id
+    ownerYearId = owner?.academic_year_id
+  }
+
+  if (!owner) throw fail(404, 'The record this file belonged to no longer exists.')
+
+  if (user.role === 'admin') return
+
+  if (user.role === 'teacher') {
+    const teacher = teacherForUser(user.id, schoolId)
+    if (teacher?.id !== owner.teacher_id) throw fail(403, "This file belongs to another teacher's work.")
+    return
+  }
+
+  if (user.role === 'student') {
+    const student = studentForUser(user.id, schoolId)
+    if (!student) throw fail(403, 'No student profile is attached to this account.')
+
+    if (attachment.uploaded_by === user.id) return
+
+    if (attachment.visibility === 'private') throw fail(403, 'This file is not available to you.')
+
+    const enrolled = db.enrollments.some(
+      (row) =>
+        row.student_id === student.id &&
+        row.class_id === ownerClassId &&
+        row.academic_year_id === ownerYearId,
+    )
+    if (!enrolled) throw fail(403, 'You are not enrolled in the class this file belongs to.')
+    return
+  }
+
+  throw fail(403, 'You do not have permission to download this file.')
+}
+
+async function attachmentDownload(config, match) {
+  const { user, school } = requireTenant(config)
+  const attachment = byId(db.attachments, match[1])
+  if (!attachment || attachment.school_id !== school.id) throw fail(404, 'Not found.')
+
+  authorizeAttachment(attachment, user, school.id)
+
+  const blob = readFile(attachment.id)
+  if (!blob) throw fail(410, 'The stored file is no longer available.')
+
+  return {
+    data: blob,
+    status: 200,
+    statusText: 'OK',
+    headers: {
+      'content-type': attachment.mime_type,
+      'content-disposition': `attachment; filename="${attachment.file_name}"`,
+    },
+    config,
+  }
+}
+
+function studentHomeworkIndex(config) {
+  const { student } = homeworkStudent(config)
+
+  const rows = studentHomeworkRows(student)
+    .sort((a, b) => new Date(b.due_at) - new Date(a.due_at))
+    .map((homework) => {
+      const submission = submissionFor(homework.id, student.id)
+      return {
+        assignment: serializeHomework(homework),
+        submission: submission ? serializeSubmission(submission) : null,
+      }
+    })
+
+  return ok(config, { data: rows, summary: studentHomeworkSummary(student) })
+}
+
+async function studentHomeworkSubmit(config, match) {
+  const { school, student, user } = homeworkStudent(config)
+  const homework = findHomework(config, match[1])
+
+  if (!homework.is_published) throw fail(403, 'This homework is not available yet.')
+  if (new Date(homework.due_at).getTime() < Date.now()) {
+    throw fail(422, 'The deadline for this homework has passed.')
+  }
+
+  // Mirrors HomeworkService::assertEnrolled().
+  const year = currentYearFor(student.school_id)
+  const enrolled = db.enrollments.some(
+    (row) =>
+      row.student_id === student.id &&
+      row.class_id === homework.class_id &&
+      row.academic_year_id === homework.academic_year_id,
+  )
+  if (!enrolled) throw fail(403, 'You are not enrolled in the class this homework was set for.')
+  if (!year) throw fail(409, 'No active academic year is configured.')
+
+  const { fields: body, files } = readMultipart(config)
+
+  // A blank submission is not a submission: require text or a file.
+  if (!String(body.content ?? '').trim() && files.length === 0) {
+    throw fail(422, 'Write your answer or attach a file before submitting.', {
+      content: ['Write your answer or attach a file before submitting.'],
+    })
+  }
+
+  const existing = submissionFor(homework.id, student.id)
+  if (existing && existing.score !== null && existing.score !== undefined) {
+    throw fail(422, 'This submission has already been graded and can no longer be changed.')
+  }
+
+  if (existing) {
+    existing.content = body.content ?? null
+    existing.attempts += 1
+    existing.submitted_at = new Date().toISOString()
+    existing.is_late = false
+    await attachFiles(SUBMISSION_TYPE, existing.id, school.id, files, 'student', 'private', user.id)
+    return ok(config, { data: serializeSubmission(existing) }, 201)
+  }
+
+  const submission = {
+    id: nextMockId(),
+    school_id: homework.school_id,
+    homework_assignment_id: homework.id,
+    student_id: student.id,
+    content: body.content ?? null,
+    attempts: 1,
+    submitted_at: new Date().toISOString(),
+    is_late: false,
+    score: null,
+    feedback: null,
+    graded_by: null,
+    graded_at: null,
+    created_at: new Date().toISOString(),
+  }
+  db.homeworkSubmissions.push(submission)
+
+  await attachFiles(SUBMISSION_TYPE, submission.id, school.id, files, 'student', 'private', user.id)
+
+  return ok(config, { data: serializeSubmission(submission) }, 201)
+}
+
+// ---------------------------------------------------------------------------
+// Course materials — mirrors App\Services\LessonService.
+// ---------------------------------------------------------------------------
+
+const lessonTeacher = (config) => homeworkTeacher(config)
+
+const findLesson = (config, id) => {
+  const { school } = requireTenant(config)
+  const lesson = scopedFind(db.lessons, id, school.id)
+  if (!lesson) throw fail(404, 'No query results for model [Lesson].')
+  return lesson
+}
+
+const assertOwnsLesson = (teacher, lesson) => {
+  if (lesson.teacher_id !== teacher.id) throw fail(403, 'This lesson belongs to another teacher.')
+}
+
+const studentLessonRows = (student) => {
+  const year = currentYearFor(student.school_id)
+  const enrollment = db.enrollments.find(
+    (row) => row.student_id === student.id && row.academic_year_id === year?.id,
+  )
+  if (!enrollment) return []
+  return db.lessons.filter(
+    (lesson) =>
+      lesson.class_id === enrollment.class_id &&
+      lesson.academic_year_id === year.id &&
+      lesson.is_published,
+  )
+}
+
+function teacherLessonIndex(config) {
+  const { teacher } = lessonTeacher(config)
+
+  const rows = db.lessons
+    .filter((lesson) => lesson.teacher_id === teacher.id)
+    .sort((a, b) => b.is_published - a.is_published || b.id - a.id)
+    .map((lesson) => serializeLesson(lesson))
+
+  return ok(config, paginate(config, rows, ['title', 'topic', 'summary']))
+}
+
+async function teacherLessonStore(config) {
+  const { school, teacher, user } = lessonTeacher(config)
+  const { fields: body, files } = readMultipart(config)
+
+  validate(body, ['class_id', 'subject_id', 'title'])
+
+  const klass = byId(db.classes, body.class_id)
+  const subject = byId(db.subjects, body.subject_id)
+  if (!klass || klass.school_id !== school.id) throw fail(422, 'The selected class belongs to another school.')
+  if (!subject || subject.school_id !== school.id) throw fail(422, 'The selected subject belongs to another school.')
+
+  const year = byId(db.academicYears, body.academic_year_id) ?? currentYearFor(school.id)
+  if (!year) throw fail(409, 'No active academic year is configured.')
+
+  assertTeacherAssigned(teacher, klass.id, subject.id, year.id)
+
+  const duplicate = db.lessons.some(
+    (row) =>
+      row.class_id === klass.id &&
+      row.subject_id === subject.id &&
+      row.academic_year_id === year.id &&
+      row.title.toLowerCase() === String(body.title).toLowerCase(),
+  )
+  if (duplicate) {
+    throw fail(422, 'A lesson with this title already exists for that class and subject.', {
+      title: ['A lesson with this title already exists for that class and subject.'],
+    })
+  }
+
+  const lesson = {
+    id: nextMockId(),
+    school_id: school.id,
+    teacher_id: teacher.id,
+    subject_id: subject.id,
+    class_id: klass.id,
+    academic_year_id: year.id,
+    semester_id: body.semester_id
+      ? Number(body.semester_id)
+      : (currentSemesterFor(school.id, year.id)?.id ?? null),
+    title: body.title,
+    topic: body.topic || null,
+    summary: body.summary || null,
+    body: body.body || null,
+    minutes: body.minutes ? Number(body.minutes) : null,
+    sequence: body.sequence ? Number(body.sequence) : 0,
+    is_published: false,
+    published_at: null,
+    created_at: new Date().toISOString(),
+  }
+  db.lessons.push(lesson)
+
+  await attachFiles(LESSON_TYPE, lesson.id, school.id, files, 'teacher', 'class', user.id)
+
+  return ok(config, { data: serializeLesson(lesson) }, 201)
+}
+
+function teacherLessonShow(config, match) {
+  const { teacher } = lessonTeacher(config)
+  const lesson = findLesson(config, match[1])
+  assertOwnsLesson(teacher, lesson)
+  return ok(config, { data: serializeLesson(lesson, { includeBody: true }) })
+}
+
+async function teacherLessonUpdate(config, match) {
+  const { school, teacher, user } = lessonTeacher(config)
+  const lesson = findLesson(config, match[1])
+  assertOwnsLesson(teacher, lesson)
+
+  const { fields: body, files } = readMultipart(config)
+  if (body.title !== undefined) lesson.title = body.title
+  if (body.topic !== undefined) lesson.topic = body.topic || null
+  if (body.summary !== undefined) lesson.summary = body.summary || null
+  if (body.body !== undefined) lesson.body = body.body || null
+  if (body.minutes !== undefined) lesson.minutes = body.minutes ? Number(body.minutes) : null
+  if (body.sequence !== undefined) lesson.sequence = Number(body.sequence) || 0
+
+  await attachFiles(LESSON_TYPE, lesson.id, school.id, files, 'teacher', 'class', user.id)
+
+  return ok(config, { data: serializeLesson(lesson, { includeBody: true }) })
+}
+
+function teacherLessonDestroy(config, match) {
+  const { teacher } = lessonTeacher(config)
+  const lesson = findLesson(config, match[1])
+  assertOwnsLesson(teacher, lesson)
+
+  db.lessons = db.lessons.filter((row) => row.id !== lesson.id)
+  db.attachments = db.attachments.filter(
+    (row) => !(row.attachable_type === LESSON_TYPE && row.attachable_id === lesson.id),
+  )
+
+  return ok(config, { message: 'Lesson deleted.' })
+}
+
+function teacherLessonPublish(config, match) {
+  const { teacher } = lessonTeacher(config)
+  const lesson = findLesson(config, match[1])
+  assertOwnsLesson(teacher, lesson)
+
+  if (!lesson.is_published) {
+    lesson.is_published = true
+    lesson.published_at = new Date().toISOString()
+
+    for (const studentId of enrolledStudentIds(lesson.class_id, lesson.academic_year_id)) {
+      const student = byId(db.students, studentId)
+      if (!student?.user_id) continue
+      const files = db.attachments.filter(
+        (row) => row.attachable_type === LESSON_TYPE && row.attachable_id === lesson.id,
+      ).length
+      db.notifications.unshift({
+        id: nextMockId(),
+        school_id: lesson.school_id,
+        user_id: student.user_id,
+        type: 'lesson_published',
+        title: `New lesson: ${lesson.title}`,
+        message: `New ${byId(db.subjects, lesson.subject_id)?.name} material for ${byId(db.classes, lesson.class_id)?.name}${files ? `, with ${files} file${files === 1 ? '' : 's'} to download.` : '.'}`,
+        data: { lesson_id: lesson.id },
+        read_at: null,
+        created_at: new Date().toISOString(),
+      })
+    }
+  }
+
+  return ok(config, { data: serializeLesson(lesson) })
+}
+
+function teacherLessonUnpublish(config, match) {
+  const { teacher } = lessonTeacher(config)
+  const lesson = findLesson(config, match[1])
+  assertOwnsLesson(teacher, lesson)
+  lesson.is_published = false
+  return ok(config, { data: serializeLesson(lesson) })
+}
+
+function studentLessonIndex(config) {
+  const { student } = homeworkStudent(config)
+
+  // Grouped subject → topic, mirroring LessonService::forStudent().
+  const grouped = {}
+  for (const lesson of studentLessonRows(student).sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))) {
+    const subjectName = byId(db.subjects, lesson.subject_id)?.name ?? 'Other'
+    const topic = lesson.topic || 'General'
+    grouped[subjectName] ??= {}
+    grouped[subjectName][topic] ??= []
+    grouped[subjectName][topic].push(serializeLesson(lesson))
+  }
+
+  const all = studentLessonRows(student)
+
+  return ok(config, {
+    data: grouped,
+    summary: {
+      lessons: all.length,
+      subjects: new Set(all.map((lesson) => lesson.subject_id)).size,
+      files: all.reduce(
+        (total, lesson) =>
+          total +
+          db.attachments.filter(
+            (row) => row.attachable_type === LESSON_TYPE && row.attachable_id === lesson.id,
+          ).length,
+        0,
+      ),
+    },
+  })
+}
+
+function studentLessonShow(config, match) {
+  const { student } = homeworkStudent(config)
+  const lesson = findLesson(config, match[1])
+
+  if (!lesson.is_published) throw fail(403, 'This lesson is not available yet.')
+
+  const enrolled = db.enrollments.some(
+    (row) =>
+      row.student_id === student.id &&
+      row.class_id === lesson.class_id &&
+      row.academic_year_id === lesson.academic_year_id,
+  )
+  if (!enrolled) throw fail(403, 'You are not enrolled in the class this lesson was written for.')
+
+  return ok(config, { data: serializeLesson(lesson, { includeBody: true }) })
+}
+
+// ---------------------------------------------------------------------------
+// Quizzes — mirrors App\Services\QuizService.
+//
+// The answer key (`correct_option`) is only ever placed in a payload a teacher
+// owns or a student has already submitted, exactly as the backend restricts it.
+// ---------------------------------------------------------------------------
+
+const quizTeacher = (config) => homeworkTeacher(config)
+
+const findQuiz = (config, id) => {
+  const { school } = requireTenant(config)
+  const quiz = scopedFind(db.quizzes, id, school.id)
+  if (!quiz) throw fail(404, 'No query results for model [Quiz].')
+  return quiz
+}
+
+const findQuizAttempt = (config, id) => {
+  const { school } = requireTenant(config)
+  const attempt = scopedFind(db.quizAttempts, id, school.id)
+  if (!attempt) throw fail(404, 'No query results for model [QuizAttempt].')
+  return attempt
+}
+
+const assertOwnsQuiz = (teacher, quiz) => {
+  if (quiz.teacher_id !== teacher.id) throw fail(403, 'This quiz belongs to another teacher.')
+}
+
+const questionsFor = (quizId) =>
+  db.quizQuestions
+    .filter((question) => question.quiz_id === Number(quizId))
+    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.id - b.id)
+
+const attemptsUsedBy = (studentId, quizId) =>
+  db.quizAttempts.filter(
+    (attempt) =>
+      attempt.quiz_id === Number(quizId) &&
+      attempt.student_id === Number(studentId) &&
+      attempt.submitted_at,
+  )
+
+const bestAttemptFor = (studentId, quizId) => {
+  const rows = attemptsUsedBy(studentId, quizId)
+  return rows.length ? [...rows].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0] : null
+}
+
+const studentQuizRows = (student) => {
+  const year = currentYearFor(student.school_id)
+  const enrollment = db.enrollments.find(
+    (row) => row.student_id === student.id && row.academic_year_id === year?.id,
+  )
+  if (!enrollment) return []
+  return db.quizzes.filter(
+    (quiz) =>
+      quiz.class_id === enrollment.class_id &&
+      quiz.academic_year_id === year.id &&
+      quiz.is_published,
+  )
+}
+
+function teacherQuizIndex(config) {
+  const { teacher } = quizTeacher(config)
+
+  const rows = db.quizzes
+    .filter((quiz) => quiz.teacher_id === teacher.id)
+    .sort((a, b) => b.id - a.id)
+    .map((quiz) => serializeQuiz(quiz))
+
+  return ok(config, paginate(config, rows, ['title', 'instructions']))
+}
+
+async function teacherQuizStore(config) {
+  const { school, teacher, user } = quizTeacher(config)
+  const { fields: body, files } = readMultipart(config)
+
+  validate(body, ['class_id', 'subject_id', 'title', 'max_score'])
+
+  const klass = byId(db.classes, body.class_id)
+  const subject = byId(db.subjects, body.subject_id)
+  if (!klass || klass.school_id !== school.id) throw fail(422, 'The selected class belongs to another school.')
+  if (!subject || subject.school_id !== school.id) throw fail(422, 'The selected subject belongs to another school.')
+
+  const year = byId(db.academicYears, body.academic_year_id) ?? currentYearFor(school.id)
+  if (!year) throw fail(409, 'No active academic year is configured.')
+
+  assertTeacherAssigned(teacher, klass.id, subject.id, year.id)
+
+  if (body.closes_at && new Date(body.closes_at).getTime() <= Date.now()) {
+    throw fail(422, 'The closing time must be in the future.', { closes_at: ['The closing time must be in the future.'] })
+  }
+
+  const duplicate = db.quizzes.some(
+    (row) =>
+      row.class_id === klass.id &&
+      row.subject_id === subject.id &&
+      row.academic_year_id === year.id &&
+      row.title.toLowerCase() === String(body.title).toLowerCase(),
+  )
+  if (duplicate) {
+    throw fail(422, 'A quiz with this title already exists for that class and subject.', {
+      title: ['A quiz with this title already exists for that class and subject.'],
+    })
+  }
+
+  const questions = body.questions ?? []
+  const questionErrors = validateQuestions(questions)
+  if (Object.keys(questionErrors).length) throw fail(422, 'The given data was invalid.', questionErrors)
+
+  const quiz = {
+    id: nextMockId(),
+    school_id: school.id,
+    teacher_id: teacher.id,
+    subject_id: subject.id,
+    class_id: klass.id,
+    academic_year_id: year.id,
+    semester_id: body.semester_id ? Number(body.semester_id) : (currentSemesterFor(school.id, year.id)?.id ?? null),
+    title: body.title,
+    instructions: body.instructions || null,
+    max_score: Number(body.max_score),
+    closes_at: body.closes_at || null,
+    time_limit_minutes: body.time_limit_minutes ? Number(body.time_limit_minutes) : null,
+    attempts_allowed: body.attempts_allowed ? Number(body.attempts_allowed) : 1,
+    is_published: false,
+    is_locked: false,
+    published_at: null,
+    created_at: new Date().toISOString(),
+  }
+  db.quizzes.push(quiz)
+
+  replaceQuizQuestions(quiz, questions)
+
+  await attachFiles(QUIZ_TYPE, quiz.id, school.id, files, 'teacher', 'class', user.id)
+
+  return ok(config, { data: serializeQuiz(quiz) }, 201)
+}
+
+/** Mirrors StoreQuizRequest::withValidator(): the key must point at a real option. */
+const validateQuestions = (questions) => {
+  const errors = {}
+  questions.forEach((question, index) => {
+    if (!question?.prompt) errors[`questions.${index}.prompt`] = ['The prompt field is required.']
+    const options = question?.options ?? []
+    if (options.length < 2) errors[`questions.${index}.options`] = ['Each question needs at least 2 options.']
+    const correct = question?.correct_option
+    if (correct === undefined || correct === null || !options[Number(correct)]) {
+      errors[`questions.${index}.correct_option`] = ['Select one of the listed options as the correct answer.']
+    }
+  })
+  return errors
+}
+
+const replaceQuizQuestions = (quiz, questions) => {
+  db.quizQuestions = db.quizQuestions.filter((row) => row.quiz_id !== quiz.id)
+  questions.forEach((question, index) => {
+    db.quizQuestions.push({
+      id: nextMockId(),
+      quiz_id: quiz.id,
+      school_id: quiz.school_id,
+      prompt: question.prompt,
+      options: question.options ?? [],
+      correct_option: Number(question.correct_option ?? 0),
+      points: question.points ? Number(question.points) : 1,
+      sequence: question.sequence ? Number(question.sequence) : index + 1,
+    })
+  })
+}
+
+function teacherQuizShow(config, match) {
+  const { teacher } = quizTeacher(config)
+  const quiz = findQuiz(config, match[1])
+  assertOwnsQuiz(teacher, quiz)
+  return ok(config, { data: serializeQuiz(quiz) })
+}
+
+async function teacherQuizUpdate(config, match) {
+  const { school, teacher, user } = quizTeacher(config)
+  const quiz = findQuiz(config, match[1])
+  assertOwnsQuiz(teacher, quiz)
+
+  const { fields: body, files } = readMultipart(config)
+
+  if (body.questions !== undefined && quiz.is_locked) {
+    throw fail(422, 'Students have already sat this quiz, so its questions can no longer be changed.', {
+      questions: ['Students have already sat this quiz, so its questions can no longer be changed.'],
+    })
+  }
+
+  if (body.title !== undefined) quiz.title = body.title
+  if (body.instructions !== undefined) quiz.instructions = body.instructions || null
+  if (body.max_score !== undefined) quiz.max_score = Number(body.max_score)
+  if (body.closes_at !== undefined) quiz.closes_at = body.closes_at || null
+  if (body.time_limit_minutes !== undefined) quiz.time_limit_minutes = body.time_limit_minutes ? Number(body.time_limit_minutes) : null
+  if (body.attempts_allowed !== undefined) quiz.attempts_allowed = Number(body.attempts_allowed)
+
+  if (body.questions !== undefined && !quiz.is_locked) {
+    const questionErrors = validateQuestions(body.questions ?? [])
+    if (Object.keys(questionErrors).length) throw fail(422, 'The given data was invalid.', questionErrors)
+    replaceQuizQuestions(quiz, body.questions ?? [])
+  }
+
+  await attachFiles(QUIZ_TYPE, quiz.id, school.id, files, 'teacher', 'class', user.id)
+
+  return ok(config, { data: serializeQuiz(quiz) })
+}
+
+function teacherQuizDestroy(config, match) {
+  const { teacher } = quizTeacher(config)
+  const quiz = findQuiz(config, match[1])
+  assertOwnsQuiz(teacher, quiz)
+
+  db.quizzes = db.quizzes.filter((row) => row.id !== quiz.id)
+  db.quizQuestions = db.quizQuestions.filter((row) => row.quiz_id !== quiz.id)
+  db.quizAttempts = db.quizAttempts.filter((row) => row.quiz_id !== quiz.id)
+  db.attachments = db.attachments.filter(
+    (row) => !(row.attachable_type === QUIZ_TYPE && row.attachable_id === quiz.id),
+  )
+
+  return ok(config, { message: 'Quiz deleted.' })
+}
+
+function teacherQuizPublish(config, match) {
+  const { teacher } = quizTeacher(config)
+  const quiz = findQuiz(config, match[1])
+  assertOwnsQuiz(teacher, quiz)
+
+  const questions = questionsFor(quiz.id)
+
+  if (questions.length === 0) {
+    throw fail(422, 'Add at least one question before publishing this quiz.', {
+      questions: ['Add at least one question before publishing this quiz.'],
+    })
+  }
+  const unmarkable = questions.some((question) => !question.options?.[question.correct_option])
+  if (unmarkable) {
+    throw fail(422, 'Every question needs a correct answer selected.', {
+      questions: ['Every question needs a correct answer selected.'],
+    })
+  }
+
+  if (!quiz.is_published) {
+    quiz.is_published = true
+    quiz.published_at = new Date().toISOString()
+
+    for (const studentId of enrolledStudentIds(quiz.class_id, quiz.academic_year_id)) {
+      const student = byId(db.students, studentId)
+      if (!student?.user_id) continue
+      db.notifications.unshift({
+        id: nextMockId(),
+        school_id: quiz.school_id,
+        user_id: student.user_id,
+        type: 'quiz_published',
+        title: `New quiz: ${quiz.title}`,
+        message: `New ${byId(db.subjects, quiz.subject_id)?.name} quiz for ${byId(db.classes, quiz.class_id)?.name} · ${questions.length} question${questions.length === 1 ? '' : 's'}${quiz.time_limit_minutes ? ` · ${quiz.time_limit_minutes} minutes` : ''}.`,
+        data: { quiz_id: quiz.id },
+        read_at: null,
+        created_at: new Date().toISOString(),
+      })
+    }
+  }
+
+  return ok(config, { data: serializeQuiz(quiz) })
+}
+
+function teacherQuizUnpublish(config, match) {
+  const { teacher } = quizTeacher(config)
+  const quiz = findQuiz(config, match[1])
+  assertOwnsQuiz(teacher, quiz)
+  quiz.is_published = false
+  return ok(config, { data: serializeQuiz(quiz) })
+}
+
+/** Class results with per-question breakdown — mirrors QuizService::resultsFor(). */
+function teacherQuizResults(config, match) {
+  const { teacher } = quizTeacher(config)
+  const quiz = findQuiz(config, match[1])
+  assertOwnsQuiz(teacher, quiz)
+
+  const questions = questionsFor(quiz.id)
+
+  const byStudent = new Map()
+  for (const attempt of db.quizAttempts.filter((row) => row.quiz_id === quiz.id && row.submitted_at)) {
+    const current = byStudent.get(attempt.student_id)
+    if (!current || (attempt.score ?? 0) > (current.score ?? 0)) byStudent.set(attempt.student_id, attempt)
+  }
+
+  const students = enrolledStudentIds(quiz.class_id, quiz.academic_year_id)
+    .map((studentId) => {
+      const student = byId(db.students, studentId)
+      const attempt = byStudent.get(studentId) ?? null
+      return {
+        student_id: studentId,
+        name: userName(student?.user_id),
+        matricule: student?.matricule ?? null,
+        score: attempt?.score ?? null,
+        max_score: quiz.max_score,
+        correct_count: attempt?.correct_count ?? null,
+        total_questions: attempt?.total_questions ?? null,
+        percentage: attempt?.total_questions ? Math.round((attempt.correct_count / attempt.total_questions) * 1000) / 10 : null,
+        attempts: attempt?.attempt ?? 0,
+        is_reviewed: Boolean(attempt?.is_reviewed),
+        submitted_at: attempt?.submitted_at ?? null,
+        attempt_id: attempt?.id ?? null,
+        status: attempt ? 'submitted' : 'not_attempted',
+      }
+    })
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+
+  const scores = students.map((row) => row.score).filter((value) => value !== null)
+  const passMark = 10
+
+  return ok(config, {
+    quiz: serializeQuiz(quiz),
+    students,
+    questions: questions.map((question) => ({
+      id: question.id,
+      prompt: question.prompt,
+      points: question.points,
+      sequence: question.sequence,
+      correct_count: [...byStudent.values()].filter((attempt) =>
+        Number(attempt.answers?.[question.id]) === question.correct_option,
+      ).length,
+    })),
+    stats: {
+      total: students.length,
+      submitted: scores.length,
+      average: scores.length ? Math.round((scores.reduce((sum, value) => sum + value, 0) / scores.length) * 100) / 100 : null,
+      highest: scores.length ? Math.max(...scores) : null,
+      lowest: scores.length ? Math.min(...scores) : null,
+      pass_rate: scores.length
+        ? Math.round((scores.filter((value) => value >= passMark).length / scores.length) * 1000) / 10
+        : null,
+    },
+  })
+}
+
+function teacherQuizAttemptShow(config, match) {
+  const { teacher } = quizTeacher(config)
+  const attempt = findQuizAttempt(config, match[1])
+  const quiz = findQuiz(config, attempt.quiz_id)
+  assertOwnsQuiz(teacher, quiz)
+  return ok(config, { data: serializeQuizAttempt(attempt) })
+}
+
+function teacherQuizAttemptReview(config, match) {
+  const { teacher } = quizTeacher(config)
+  const attempt = findQuizAttempt(config, match[1])
+  const quiz = findQuiz(config, attempt.quiz_id)
+  assertOwnsQuiz(teacher, quiz)
+
+  const body = readBody(config)
+  if (!attempt.submitted_at) throw fail(422, 'This attempt has not been submitted yet.')
+
+  attempt.feedback = body.feedback ?? null
+  attempt.is_reviewed = true
+  attempt.reviewed_at = new Date().toISOString()
+  attempt.reviewed_by = teacher.id
+
+  const student = byId(db.students, attempt.student_id)
+  if (student?.user_id) {
+    db.notifications.unshift({
+      id: nextMockId(),
+      school_id: attempt.school_id,
+      user_id: student.user_id,
+      type: 'quiz_reviewed',
+      title: 'Your quiz result is ready',
+      message: `"${quiz.title}" was marked ${Number(attempt.score).toFixed(2)}/${quiz.max_score} (${attempt.correct_count}/${attempt.total_questions} correct).`,
+      data: { quiz_id: quiz.id, attempt_id: attempt.id, score: attempt.score },
+      read_at: null,
+      created_at: new Date().toISOString(),
+    })
+  }
+
+  return ok(config, { data: serializeQuizAttempt(attempt) })
+}
+
+function studentQuizIndex(config) {
+  const { student } = homeworkStudent(config)
+
+  const rows = studentQuizRows(student)
+    .sort((a, b) => b.id - a.id)
+    .map((quiz) => {
+      const best = bestAttemptFor(student.id, quiz.id)
+      return {
+        quiz: serializeQuiz(quiz, { withKey: false }),
+        attempt: best ? serializeQuizAttempt(best) : null,
+        attempts_used: attemptsUsedBy(student.id, quiz.id).length,
+      }
+    })
+
+  const scores = rows.map((row) => row.attempt?.score).filter((value) => value !== null && value !== undefined)
+
+  return ok(config, {
+    data: rows,
+    summary: {
+      available: rows.length,
+      completed: scores.length,
+      average: scores.length ? Math.round((scores.reduce((sum, value) => sum + value, 0) / scores.length) * 100) / 100 : null,
+    },
+  })
+}
+
+/**
+ * The paper to sit — the answer key is stripped here, not by the client.
+ */
+function studentQuizPaper(config, match) {
+  const { student } = homeworkStudent(config)
+  const quiz = findQuiz(config, match[1])
+
+  if (!quiz.is_published) throw fail(403, 'This quiz is not available yet.')
+
+  const enrolled = db.enrollments.some(
+    (row) =>
+      row.student_id === student.id &&
+      row.class_id === quiz.class_id &&
+      row.academic_year_id === quiz.academic_year_id,
+  )
+  if (!enrolled) throw fail(403, 'You are not enrolled in the class this quiz was set for.')
+
+  if (quizClosed(quiz)) throw fail(403, 'This quiz has closed.')
+
+  const remaining = (quiz.attempts_allowed ?? 1) - attemptsUsedBy(student.id, quiz.id).length
+  if (remaining <= 0) throw fail(422, 'You have already used every attempt for this quiz.')
+
+  const questions = questionsFor(quiz.id).map((question) => ({
+    id: question.id,
+    prompt: question.prompt,
+    options: question.options,
+    points: question.points,
+    sequence: question.sequence,
+  }))
+
+  return ok(config, {
+    quiz: serializeQuiz(quiz, { withKey: false }),
+    questions,
+    attempts_remaining: remaining,
+    points_available: questions.reduce((total, question) => total + (question.points ?? 1), 0),
+  })
+}
+
+function studentQuizSubmit(config, match) {
+  const { student } = homeworkStudent(config)
+  const quiz = findQuiz(config, match[1])
+
+  if (!quiz.is_published) throw fail(403, 'This quiz is not available yet.')
+  if (quizClosed(quiz)) throw fail(422, 'This quiz has closed.')
+
+  const enrolled = db.enrollments.some(
+    (row) =>
+      row.student_id === student.id &&
+      row.class_id === quiz.class_id &&
+      row.academic_year_id === quiz.academic_year_id,
+  )
+  if (!enrolled) throw fail(403, 'You are not enrolled in the class this quiz was set for.')
+
+  const used = attemptsUsedBy(student.id, quiz.id).length
+  if (used >= (quiz.attempts_allowed ?? 1)) {
+    throw fail(422, 'You have already used every attempt for this quiz.', {
+      answers: ['You have already used every attempt for this quiz.'],
+    })
+  }
+
+  const body = readBody(config)
+  const answers = body.answers ?? {}
+  const questions = questionsFor(quiz.id)
+  if (questions.length === 0) throw fail(422, 'This quiz has no questions.')
+
+  let correct = 0
+  let earned = 0
+  const stored = {}
+  for (const question of questions) {
+    const choice = answers[question.id]
+    const index = Number.isInteger(choice) || (typeof choice === 'string' && choice !== '' && !Number.isNaN(Number(choice)))
+      ? Number(choice)
+      : null
+    stored[question.id] = index
+    if (index !== null && index === question.correct_option) {
+      correct += 1
+      earned += question.points ?? 1
+    }
+  }
+
+  // Scale the earned points onto the quiz's own mark, so a 5-point question
+  // really is worth five times a 1-point one.
+  const points = questions.reduce((total, question) => total + (question.points ?? 1), 0)
+  const score = points > 0 ? Math.round((earned / points) * quiz.max_score * 100) / 100 : 0
+
+  const attempt = {
+    id: nextMockId(),
+    quiz_id: quiz.id,
+    student_id: student.id,
+    school_id: quiz.school_id,
+    answers: stored,
+    correct_count: correct,
+    total_questions: questions.length,
+    score,
+    attempt: used + 1,
+    started_at: new Date().toISOString(),
+    submitted_at: new Date().toISOString(),
+    feedback: null,
+    is_reviewed: false,
+    reviewed_at: null,
+    reviewed_by: null,
+  }
+  db.quizAttempts.push(attempt)
+
+  // Sitting a paper freezes it, exactly as the backend locks on first attempt.
+  if (!quiz.is_locked) quiz.is_locked = true
+
+  return ok(config, { data: serializeQuizAttempt(attempt) }, 201)
+}
+
+/** Per-question review of an attempt the student has already submitted. */
+function studentQuizReview(config, match) {
+  const { student } = homeworkStudent(config)
+  const attempt = findQuizAttempt(config, match[1])
+
+  if (attempt.student_id !== student.id) throw fail(403, 'This attempt belongs to another student.')
+  if (!attempt.submitted_at) throw fail(403, 'This attempt has not been submitted.')
+
+  const quiz = findQuiz(config, attempt.quiz_id)
+
+  const questions = questionsFor(quiz.id).map((question) => {
+    const choice = Number(attempt.answers?.[question.id])
+    const chosen = Number.isNaN(choice) ? null : choice
+    return {
+      id: question.id,
+      prompt: question.prompt,
+      options: question.options,
+      points: question.points,
+      sequence: question.sequence,
+      chosen,
+      correct_option: question.correct_option,
+      is_correct: chosen !== null && chosen === question.correct_option,
+    }
+  })
+
+  return ok(config, {
+    attempt: serializeQuizAttempt(attempt),
+    quiz: serializeQuiz(quiz, { withKey: false }),
+    questions,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5.5 — Messaging, school events and the personal calendar
+// ---------------------------------------------------------------------------
+
+/**
+ * Conversations, tenant-scoped. A conversation id from another school must
+ * 404 exactly as Laravel's TenantScope would, never 403 — otherwise the status
+ * code leaks that the record exists.
+ */
+const findConversation = (config, id) => {
+  const { school } = requireTenant(config)
+  const conversation = scopedFind(db.conversations, id, school.id)
+  if (!conversation) throw fail(404, 'No query results for model [Conversation].')
+  return conversation
+}
+
+const findEvent = (config, id) => {
+  const { school } = requireTenant(config)
+  const event = scopedFind(db.events, id, school.id)
+  if (!event) throw fail(404, 'No query results for model [Event].')
+  return event
+}
+
+/** Lower id first, so a pair always resolves to one thread. */
+const orderedPair = (a, b) => (Number(a) < Number(b) ? [Number(a), Number(b)] : [Number(b), Number(a)])
+
+const isParticipant = (conversation, userId) =>
+  Number(conversation.participant_a_id) === Number(userId)
+  || Number(conversation.participant_b_id) === Number(userId)
+
+const otherParticipantId = (conversation, userId) =>
+  Number(conversation.participant_a_id) === Number(userId)
+    ? conversation.participant_b_id
+    : conversation.participant_a_id
+
+function messageIndex(config) {
+  const { user } = requireTenant(config)
+  const rows = db.conversations
+    .filter((conversation) => isParticipant(conversation, user.id))
+    .sort((a, b) => String(b.last_message_at ?? '').localeCompare(String(a.last_message_at ?? '')) || b.id - a.id)
+    .map((conversation) => serializeConversation(conversation, user.id))
+  return ok(config, paginate(config, rows))
+}
+
+function messageStore(config) {
+  const { user, school } = requireTenant(config)
+  const body = readBody(config)
+
+  if (!body.user_id) throw fail(422, 'The given data was invalid.', { user_id: ['The user id field is required.'] })
+
+  const other = byId(db.users, body.user_id)
+  if (!other) throw fail(422, 'The selected user id is invalid.', { user_id: ['The selected user id is invalid.'] })
+  if (Number(other.id) === Number(user.id)) {
+    throw fail(422, 'You cannot start a conversation with yourself.', {
+      user_id: ['You cannot start a conversation with yourself.'],
+    })
+  }
+  if (other.school_id !== school.id) throw fail(403, 'That person is not at your school.')
+
+  // The safeguarding rule: students reach staff, not each other.
+  if (user.role === 'student' && !['teacher', 'admin'].includes(other.role)) {
+    throw fail(403, 'Students can message teachers and administrators only.')
+  }
+
+  const [a, b] = orderedPair(user.id, other.id)
+  const existing = db.conversations.find(
+    (row) => row.school_id === school.id
+      && Number(row.participant_a_id) === a
+      && Number(row.participant_b_id) === b,
+  )
+  const conversation = existing ?? {
+    id: nextMockId(),
+    school_id: school.id,
+    participant_a_id: a,
+    participant_b_id: b,
+    last_message_at: null,
+  }
+  if (!existing) db.conversations.push(conversation)
+
+  return ok(config, { data: serializeConversation(conversation, user.id) }, 201)
+}
+
+function messageShow(config, match) {
+  const id = match[1]
+  const { user } = requireTenant(config)
+  const conversation = findConversation(config, id)
+  if (!isParticipant(conversation, user.id)) throw fail(403, 'You are not part of this conversation.')
+
+  // Opening a thread is the read receipt.
+  db.messages.forEach((message) => {
+    if (message.conversation_id === conversation.id
+      && message.read_at == null
+      && Number(message.sender_id) !== Number(user.id)) {
+      message.read_at = new Date().toISOString()
+    }
+  })
+
+  const rows = db.messages
+    .filter((message) => message.conversation_id === conversation.id)
+    .sort((a, b) => a.id - b.id)
+    .map((message) => serializeMessage(message, user.id))
+  return ok(config, paginate(config, rows))
+}
+
+function messageSend(config, match) {
+  const id = match[1]
+  const { user, school } = requireTenant(config)
+  const conversation = findConversation(config, id)
+  if (!isParticipant(conversation, user.id)) throw fail(403, 'You are not part of this conversation.')
+
+  const body = readBody(config)
+  const text = String(body.body ?? '').trim()
+  if (!text) throw fail(422, 'The given data was invalid.', { body: ['The body field is required.'] })
+  if (text.length > 2000) {
+    throw fail(422, 'The given data was invalid.', { body: ['The body field must not exceed 2000 characters.'] })
+  }
+
+  const now = new Date().toISOString()
+  const message = {
+    id: nextMockId(),
+    conversation_id: conversation.id,
+    school_id: school.id,
+    sender_id: user.id,
+    body: text,
+    read_at: null,
+    created_at: now,
+  }
+  db.messages.push(message)
+  conversation.last_message_at = now
+
+  const recipient = byId(db.users, otherParticipantId(conversation, user.id))
+  if (recipient) {
+    db.notifications.push({
+      id: nextMockId(),
+      school_id: school.id,
+      user_id: recipient.id,
+      type: 'message',
+      title: `New message from ${user.name}`,
+      message: text.length > 140 ? `${text.slice(0, 137)}...` : text,
+      data: { conversation_id: conversation.id, message_id: message.id, sender_id: user.id },
+      read_at: null,
+    })
+  }
+
+  return ok(config, { data: serializeMessage(message, user.id) }, 201)
+}
+
+function messageRead(config, match) {
+  const id = match[1]
+  const { user } = requireTenant(config)
+  const conversation = findConversation(config, id)
+  if (!isParticipant(conversation, user.id)) throw fail(403, 'You are not part of this conversation.')
+
+  let marked = 0
+  db.messages.forEach((message) => {
+    if (message.conversation_id === conversation.id
+      && message.read_at == null
+      && Number(message.sender_id) !== Number(user.id)) {
+      message.read_at = new Date().toISOString()
+      marked += 1
+    }
+  })
+  return ok(config, { marked })
+}
+
+function messageUnread(config) {
+  const { user } = requireTenant(config)
+  const mine = db.conversations.filter((row) => isParticipant(row, user.id)).map((row) => row.id)
+  const unread = db.messages.filter(
+    (message) => mine.includes(message.conversation_id)
+      && message.read_at == null
+      && Number(message.sender_id) !== Number(user.id),
+  ).length
+  return ok(config, { unread })
+}
+
+/**
+ * Who may be messaged. Students get staff only; super admins are never listed
+ * because they belong to the platform, not the school.
+ */
+function messageRecipients(config) {
+  const { user, school } = requireTenant(config)
+  const term = String(config.params?.search ?? '').trim().toLowerCase()
+  const rows = db.users
+    .filter((candidate) => candidate.school_id === school.id
+      && Number(candidate.id) !== Number(user.id)
+      && candidate.role !== 'super_admin'
+      && (user.role !== 'student' || ['teacher', 'admin'].includes(candidate.role))
+      && (!term || candidate.name.toLowerCase().includes(term)))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, 25)
+    .map(serializeUserBrief)
+  return ok(config, { data: rows })
+}
+
+// --- events ----------------------------------------------------------------
+
+const upcomingEvents = (user, days, type) => {
+  const now = Date.now()
+  const limit = now + days * 86400000
+  return db.events
+    .filter((event) => event.school_id === user.school_id
+      && event.is_published
+      && eventVisibleToRole(event, user.role)
+      && (!type || event.type === type)
+      && new Date(event.starts_at).getTime() <= limit
+      && (event.ends_at ? new Date(event.ends_at).getTime() >= now : new Date(event.starts_at).getTime() >= now))
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+}
+
+function eventIndex(config) {
+  const { user } = requireTenant(config)
+  const days = Math.min(Math.max(Number(config.params?.days) || 60, 1), 365)
+  const type = config.params?.type || null
+  return ok(config, { data: upcomingEvents(user, days, type).map((event) => serializeEvent(event)) })
+}
+
+function eventShow(config, match) {
+  const id = match[1]
+  const { user } = requireTenant(config)
+  const event = findEvent(config, id)
+
+  // A draft, or an event aimed at another audience, simply does not exist for
+  // this caller — 404 rather than 403, so its existence is not disclosed.
+  if (!event.is_published || !eventVisibleToRole(event, user.role)) {
+    throw fail(404, 'Event not found.')
+  }
+  return ok(config, { data: serializeEvent(event) })
+}
+
+function adminEventIndex(config) {
+  const { school } = requireAdmin(config)
+  const rows = db.events
+    .filter((event) => event.school_id === school.id)
+    .sort((a, b) => b.starts_at.localeCompare(a.starts_at))
+    .map((event) => serializeEvent(event, { withAuthor: true }))
+
+  // `paginate` applies ?search= itself, so the searchable fields have to be
+  // declared here — pre-filtering and passing no fields returns nothing at all.
+  return ok(config, paginate(config, rows, ['title', 'description', 'location']))
+}
+
+const EVENT_TYPES = ['assembly', 'exam', 'holiday', 'sports', 'meeting', 'deadline', 'other']
+const EVENT_AUDIENCES = ['all', 'students', 'teachers']
+
+function adminEventStore(config) {
+  const { user, school } = requireAdmin(config)
+  const body = readBody(config)
+  const errors = { ...validate(body, ['title', 'type', 'starts_at', 'audience']) }
+
+  if (body.type && !EVENT_TYPES.includes(body.type)) {
+    errors.type = ['The selected type is invalid.']
+  }
+  if (body.audience && !EVENT_AUDIENCES.includes(body.audience)) {
+    errors.audience = ['The selected audience is invalid.']
+  }
+  if (body.ends_at && new Date(body.ends_at) <= new Date(body.starts_at)) {
+    errors.ends_at = ['An event must end after it starts.']
+  }
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+
+  const event = {
+    id: nextMockId(),
+    school_id: school.id,
+    user_id: user.id,
+    title: body.title,
+    description: body.description || null,
+    type: body.type,
+    starts_at: body.starts_at,
+    ends_at: body.ends_at || null,
+    all_day: Boolean(body.all_day),
+    location: body.location || null,
+    audience: body.audience,
+    is_published: false,
+    published_at: null,
+    created_at: new Date().toISOString(),
+  }
+  db.events.push(event)
+  return ok(config, { data: serializeEvent(event, { withAuthor: true }) }, 201)
+}
+
+function adminEventShow(config, match) {
+  const id = match[1]
+  requireAdmin(config)
+  return ok(config, { data: serializeEvent(findEvent(config, id), { withAuthor: true }) })
+}
+
+function adminEventUpdate(config, match) {
+  const id = match[1]
+  requireAdmin(config)
+  const event = findEvent(config, id)
+  const body = readBody(config)
+  const errors = {}
+
+  const startsAt = body.starts_at ?? event.starts_at
+  const endsAt = body.ends_at !== undefined ? body.ends_at : event.ends_at
+
+  if (body.type && !EVENT_TYPES.includes(body.type)) errors.type = ['The selected type is invalid.']
+  if (body.audience && !EVENT_AUDIENCES.includes(body.audience)) {
+    errors.audience = ['The selected audience is invalid.']
+  }
+  if (endsAt && new Date(endsAt) <= new Date(startsAt)) errors.ends_at = ['An event must end after it starts.']
+  if (Object.keys(errors).length) throw fail(422, 'The given data was invalid.', errors)
+
+  if (body.title !== undefined) event.title = body.title
+  if (body.description !== undefined) event.description = body.description || null
+  if (body.type !== undefined) event.type = body.type
+  if (body.starts_at !== undefined) event.starts_at = body.starts_at
+  if (body.ends_at !== undefined) event.ends_at = body.ends_at || null
+  if (body.all_day !== undefined) event.all_day = Boolean(body.all_day)
+  if (body.location !== undefined) event.location = body.location || null
+  if (body.audience !== undefined) event.audience = body.audience
+
+  return ok(config, { data: serializeEvent(event, { withAuthor: true }) })
+}
+
+function adminEventPublish(config, match) {
+  const id = match[1]
+  const { school } = requireAdmin(config)
+  const event = findEvent(config, id)
+
+  if (!event.is_published) {
+    event.is_published = true
+    event.published_at = new Date().toISOString()
+
+    const when = event.starts_at
+    const body = [event.type.charAt(0).toUpperCase() + event.type.slice(1), when, event.location]
+      .filter(Boolean)
+      .join(' · ')
+    db.users
+      .filter((candidate) => candidate.school_id === school.id
+        && (event.audience === 'all'
+          || candidate.role === (event.audience === 'students' ? 'student' : 'teacher')))
+      .forEach((candidate) => {
+        db.notifications.push({
+          id: nextMockId(),
+          school_id: school.id,
+          user_id: candidate.id,
+          type: 'event',
+          title: event.title,
+          message: body,
+          data: { event_id: event.id },
+          read_at: null,
+        })
+      })
+  }
+  return ok(config, { data: serializeEvent(event, { withAuthor: true }) })
+}
+
+function adminEventUnpublish(config, match) {
+  const id = match[1]
+  requireAdmin(config)
+  const event = findEvent(config, id)
+  event.is_published = false
+  return ok(config, { data: serializeEvent(event, { withAuthor: true }) })
+}
+
+function adminEventDestroy(config, match) {
+  const id = match[1]
+  requireAdmin(config)
+  const event = findEvent(config, id)
+  db.events = db.events.filter((row) => row.id !== event.id)
+  return ok(config, { message: 'Event deleted.' })
+}
+
+// --- calendar --------------------------------------------------------------
+
+const isoDateOf = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+/** ISO weekday: Monday 1 … Sunday 7, matching how timetable `day` is stored. */
+const isoWeekdayOf = (date) => ((date.getDay() + 6) % 7) + 1
+
+const mondayOf = (date) => {
+  const copy = new Date(date)
+  copy.setDate(copy.getDate() - ((copy.getDay() + 6) % 7))
+  return copy
+}
+
+const sundayOf = (date) => {
+  const copy = mondayOf(date)
+  copy.setDate(copy.getDate() + 6)
+  return copy
+}
+
+/**
+ * The class/subject pairs a user's calendar is built from, mirroring
+ * CalendarService::scopeFor. A student has one class and every subject in it;
+ * a teacher has each class/subject pair they are assigned.
+ */
+/**
+ * Whether this caller may act on one specific student. Mirrors
+ * AcademicScopeService::sees — an administrator may act on any pupil in their
+ * school, a teacher only on pupils enrolled in a class they hold, a student
+ * only on themselves.
+ */
+const academicSeesStudent = (user, student) => {
+  if (user.role === 'admin') return Number(student.school_id) === Number(user.school_id)
+  if (user.role === 'student') {
+    const own = studentForUser(user.id, user.school_id)
+    return Boolean(own) && Number(own.id) === Number(student.id)
+  }
+  const year = currentYearFor(user.school_id)
+  const scope = academicScope(user)
+  if (!year || !scope) return false
+  return db.enrollments.some(
+    (enrollment) => Number(enrollment.student_id) === Number(student.id)
+      && Number(enrollment.academic_year_id) === Number(year.id)
+      && scope.classes.map(Number).includes(Number(enrollment.class_id)),
+  )
+}
+
+const academicScope = (user) => {
+  const year = currentYearFor(user.school_id)
+  if (!year) return null
+
+  if (user.role === 'student') {
+    // Both lookups are school-scoped, so the school id is required — without
+    // it they match nothing and the calendar silently loses every lesson.
+    const student = studentForUser(user.id, user.school_id)
+    if (!student) return null
+    const enrollment = db.enrollments.find(
+      (row) => row.student_id === student.id && row.academic_year_id === year.id,
+    )
+    return enrollment
+      ? { classes: [enrollment.class_id], pairs: [], isTeacher: false }
+      : null
+  }
+
+  if (user.role === 'teacher') {
+    const teacher = teacherForUser(user.id, user.school_id)
+    if (!teacher) return null
+    const rows = db.teachingAssignments.filter(
+      (row) => row.teacher_id === teacher.id && row.academic_year_id === year.id,
+    )
+    if (rows.length === 0) return null
+    return {
+      classes: [...new Set(rows.map((row) => row.class_id))],
+      pairs: [...new Set(rows.map((row) => `${row.class_id}:${row.subject_id}`))],
+      isTeacher: true,
+    }
+  }
+
+  return null
+}
+
+const inPairScope = (row, scope) =>
+  scope.isTeacher
+    ? scope.pairs.includes(`${row.class_id}:${row.subject_id}`)
+    : scope.classes.includes(row.class_id)
+
+const calendarLessons = (user, scope, from, to) => {
+  const year = currentYearFor(user.school_id)
+  const rows = db.timetableEntries.filter(
+    (entry) => entry.academic_year_id === year.id
+      && (scope.isTeacher
+        ? scope.pairs.includes(`${entry.class_id}:${entry.subject_id}`)
+        : scope.classes.includes(entry.class_id)),
+  )
+
+  const items = []
+  const cursor = new Date(from)
+  cursor.setHours(0, 0, 0, 0)
+  const last = new Date(to)
+  last.setHours(0, 0, 0, 0)
+
+  let guard = 0
+  while (cursor <= last && guard < 100) {
+    const weekday = isoWeekdayOf(cursor)
+    const date = isoDateOf(cursor)
+    rows
+      .filter((entry) => Number(entry.day) === weekday)
+      .forEach((entry) => {
+        items.push({
+          kind: 'lesson',
+          id: entry.id,
+          title: byId(db.subjects, entry.subject_id)?.name ?? 'Lesson',
+          subtitle: byId(db.classes, entry.class_id)?.name ?? null,
+          starts_at: `${date}T${entry.start}:00`,
+          ends_at: `${date}T${entry.end}:00`,
+          all_day: false,
+          url: user.role === 'student' ? '/student/timetable' : '/teacher/timetable',
+        })
+      })
+    cursor.setDate(cursor.getDate() + 1)
+    guard += 1
+  }
+  return items
+}
+
+const betweenInclusive = (value, from, to) => {
+  const date = String(value).slice(0, 10)
+  return date >= from && date <= to
+}
+
+const calendarExams = (user, scope, from, to) => {
+  const year = currentYearFor(user.school_id)
+  return db.exams
+    .filter((exam) => exam.academic_year_id === year.id
+      && betweenInclusive(exam.date, from, to)
+      && (scope.isTeacher
+        ? scope.pairs.includes(`${exam.class_id}:${exam.subject_id}`)
+        : scope.classes.includes(exam.class_id)))
+    .map((exam) => ({
+      kind: 'exam',
+      id: exam.id,
+      title: `${byId(db.subjects, exam.subject_id)?.name ?? 'Exam'} exam`,
+      subtitle: exam.room || byId(db.classes, exam.class_id)?.name || null,
+      starts_at: `${exam.date}T${exam.start}:00`,
+      ends_at: `${exam.date}T${exam.end}:00`,
+      all_day: false,
+      url: user.role === 'student' ? '/student/exams' : '/teacher/exams',
+    }))
+}
+
+const calendarHomework = (user, scope, from, to) =>
+  db.homeworkAssignments
+    .filter((row) => row.is_published
+      && betweenInclusive(row.due_at, from, to)
+      && inPairScope(row, scope))
+    .map((row) => ({
+      kind: 'homework',
+      id: row.id,
+      title: row.title,
+      subtitle: `${byId(db.subjects, row.subject_id)?.name ?? 'Subject'} due`,
+      starts_at: row.due_at,
+      ends_at: row.due_at,
+      all_day: false,
+      url: user.role === 'student' ? '/student/homework' : '/teacher/homework',
+    }))
+
+const calendarQuizzes = (user, scope, from, to) =>
+  db.quizzes
+    .filter((row) => row.is_published
+      && row.closes_at
+      && betweenInclusive(row.closes_at, from, to)
+      && inPairScope(row, scope))
+    .map((row) => ({
+      kind: 'quiz',
+      id: row.id,
+      title: row.title,
+      subtitle: `${byId(db.subjects, row.subject_id)?.name ?? 'Subject'} closes`,
+      starts_at: row.closes_at,
+      ends_at: row.closes_at,
+      all_day: false,
+      url: user.role === 'student' ? '/student/quizzes' : '/teacher/quizzes',
+    }))
+
+const calendarEvents = (user, from, to) =>
+  db.events
+    .filter((event) => event.school_id === user.school_id
+      && event.is_published
+      && eventVisibleToRole(event, user.role)
+      && betweenInclusive(event.starts_at, from, to))
+    .map((event) => ({
+      kind: 'event',
+      id: event.id,
+      title: event.title,
+      subtitle: event.location || event.type.charAt(0).toUpperCase() + event.type.slice(1),
+      starts_at: event.starts_at,
+      ends_at: event.ends_at ?? null,
+      all_day: Boolean(event.all_day),
+      url: null,
+    }))
+
+const calendarItems = (user, from, to) => {
+  const scope = academicScope(user)
+  let items = calendarEvents(user, from, to)
+
+  if (scope) {
+    items = items
+      .concat(calendarLessons(user, scope, from, to))
+      .concat(calendarExams(user, scope, from, to))
+      .concat(calendarHomework(user, scope, from, to))
+      .concat(calendarQuizzes(user, scope, from, to))
+  }
+
+  return items.sort(
+    (a, b) => String(a.starts_at).localeCompare(String(b.starts_at)) || a.title.localeCompare(b.title),
+  )
+}
+
+function calendarIndex(config) {
+  const { user } = requireTenant(config)
+  const params = config.params ?? {}
+  const iso = /^\d{4}-\d{2}-\d{2}$/
+
+  let from = iso.test(params.from ?? '') ? params.from : isoDateOf(mondayOf(new Date()))
+  const requestedTo = iso.test(params.to ?? '') ? params.to : isoDateOf(sundayOf(new Date()))
+
+  // Clamp the span, as the Laravel controller does, rather than refusing.
+  const earliest = new Date(from)
+  earliest.setDate(earliest.getDate() + 91)
+  const limit = isoDateOf(earliest)
+  const to = requestedTo > limit ? limit : requestedTo
+  if (to < from) from = to
+
+  return ok(config, { from, to, data: calendarItems(user, from, to) })
+}
+
+function calendarToday(config) {
+  const { user } = requireTenant(config)
+  const date = isoDateOf(new Date())
+  return ok(config, { date, data: calendarItems(user, date, date) })
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5.6 — analytics and the pastoral register
+// ---------------------------------------------------------------------------
+
+/**
+ * Tenant-scoped student lookup. A foreign-school id must 404, never 403.
+ */
+const findStudentRow = (config, id) => {
+  const { school } = requireTenant(config)
+  const student = scopedFind(db.students, id, school.id)
+  if (!student) throw fail(404, 'No query results for model [Student].')
+  return student
+}
+
+const gradeAverage = (grade) => weightedAverageOf(grade)
+
+const meanOf = (values) => {
+  const clean = values.filter((value) => value !== null && value !== undefined)
+  return clean.length === 0 ? null : clean.reduce((sum, value) => sum + value, 0) / clean.length
+}
+
+/**
+ * Attendance as present-or-late over present, late and absent. An excused
+ * absence sits outside both sides: a medical absence is not a warning sign.
+ */
+const attendanceCounts = (studentId) => {
+  const counts = {}
+  db.attendances
+    .filter((row) => Number(row.student_id) === Number(studentId))
+    .forEach((row) => {
+      counts[row.status] = (counts[row.status] ?? 0) + 1
+    })
+  return counts
+}
+
+const attendanceRateOf = (counts) => {
+  const attended = (counts.present ?? 0) + (counts.late ?? 0)
+  const counted = attended + (counts.absent ?? 0)
+  return counted > 0 ? Math.round((attended / counted) * 1000) / 10 : null
+}
+
+const semesterPair = (schoolId) => {
+  const year = currentYearFor(schoolId)
+  if (!year) return { current: null, previous: null }
+  const current = db.semesters.find((row) => row.academic_year_id === year.id && row.is_current)
+  const previous = current
+    ? db.semesters.find((row) => row.academic_year_id === year.id && row.sequence === current.sequence - 1)
+    : null
+  return { current: current?.id ?? null, previous: previous?.id ?? null }
+}
+
+/** The class a student is enrolled in *this* year. */
+const currentClassOf = (studentId, schoolId) => {
+  const year = currentYearFor(schoolId)
+  const enrollment = db.enrollments.find(
+    (row) => Number(row.student_id) === Number(studentId) && row.academic_year_id === year?.id,
+  )
+  return enrollment ? byId(db.classes, enrollment.class_id) : null
+}
+
+const scopedGrades = (studentIds, scope) =>
+  db.grades.filter((grade) => studentIds.includes(Number(grade.student_id))
+    && (!scope || inPairScope(grade, scope)))
+
+const homeworkStats = (studentId, scope) => {
+  const year = currentYearFor(db.grades.find((g) => Number(g.student_id) === Number(studentId))?.school_id)
+  const assignments = db.homeworkAssignments.filter(
+    (row) => row.is_published
+      && (!year || row.academic_year_id === year.id)
+      && (!scope || inPairScope(row, scope)),
+  )
+  if (assignments.length === 0) return null
+
+  const submitted = new Set(
+    db.homeworkSubmissions
+      .filter((row) => Number(row.student_id) === Number(studentId)
+        && row.submitted_at
+        && assignments.some((assignment) => assignment.id === row.homework_assignment_id))
+      .map((row) => row.homework_assignment_id),
+  )
+  const now = Date.now()
+  const missing = assignments.filter(
+    (row) => !submitted.has(row.id) && row.due_at && new Date(row.due_at).getTime() < now,
+  ).length
+
+  return { published: assignments.length, submitted: submitted.size, missing }
+}
+
+const quizStats = (studentId, scope) => {
+  const quizzes = db.quizzes.filter(
+    (row) => row.is_published && (!scope || inPairScope(row, scope)),
+  )
+  if (quizzes.length === 0) return null
+
+  const attempts = db.quizAttempts.filter(
+    (row) => Number(row.student_id) === Number(studentId)
+      && row.submitted_at
+      && quizzes.some((quiz) => quiz.id === row.quiz_id),
+  )
+
+  const percentages = attempts
+    .map((attempt) => {
+      const quiz = byId(db.quizzes, attempt.quiz_id)
+      const max = Number(quiz?.max_score ?? 0)
+      return max > 0 && attempt.score != null ? (Number(attempt.score) / max) * 100 : null
+    })
+    .filter((value) => value !== null)
+
+  return {
+    attempts: attempts.length,
+    percentage: percentages.length === 0
+      ? null
+      : Math.round((percentages.reduce((sum, value) => sum + value, 0) / percentages.length) * 100) / 100,
+  }
+}
+
+/**
+ * One student's signals. Mirrors AtRiskService: each signal carries a reason in
+ * words, because a bare score does not tell a form teacher what to do.
+ */
+const assessStudent = (student, scope) => {
+  const grades = scopedGrades([student.id], scope)
+  const averages = grades.map(gradeAverage).filter((value) => value != null)
+  const overall = averages.length === 0
+    ? null
+    : Math.round((averages.reduce((sum, value) => sum + value, 0) / averages.length) * 100) / 100
+
+  const signals = []
+  const pass = GRADING.pass_mark
+
+  if (overall !== null && overall < pass) {
+    signals.push(overall < pass - AT_RISK.critical_margin
+      ? { code: 'low_average', label: 'Low average', severity: 'critical', detail: `Term average is ${overall} out of 20, well below the pass mark of ${pass}.` }
+      : { code: 'low_average', label: 'Low average', severity: 'warning', detail: `Term average is ${overall} out of 20, just below the pass mark of ${pass}.` })
+  }
+
+  const failing = grades
+    .map((grade) => ({ subject: byId(db.subjects, grade.subject_id)?.name ?? 'Subject', average: gradeAverage(grade) }))
+    .filter((row) => row.average != null && row.average < pass)
+  if (failing.length >= AT_RISK.failing_subjects) {
+    signals.push({
+      code: 'failing_subjects',
+      label: 'Failing subjects',
+      severity: 'warning',
+      detail: `Below the pass mark in ${failing.length} subject(s): ${failing.slice(0, 4).map((row) => row.subject).join(', ')}.`,
+    })
+  }
+
+  const semesters = semesterPair(student.school_id)
+  if (semesters.current && semesters.previous) {
+    const meanFor = (semesterId) => meanOf(
+      grades.filter((grade) => Number(grade.semester_id) === Number(semesterId)).map(gradeAverage),
+    )
+    const current = meanFor(semesters.current)
+    const previous = meanFor(semesters.previous)
+    if (current !== null && previous !== null) {
+      const drop = Math.round((previous - current) * 100) / 100
+      if (drop >= AT_RISK.decline_points) {
+        signals.push({
+          code: 'declining',
+          label: 'Declining',
+          severity: 'warning',
+          detail: `Average fell from ${Math.round(previous * 100) / 100} to ${Math.round(current * 100) / 100} between semesters (${drop} points).`,
+        })
+      }
+    }
+  }
+
+  const homework = homeworkStats(student.id, scope)
+  if (homework) {
+    if (homework.missing >= AT_RISK.missing_homework) {
+      signals.push({
+        code: 'missing_homework',
+        label: 'Missing homework',
+        severity: 'critical',
+        detail: `${homework.missing} published assignment(s) past their deadline with nothing submitted.`,
+      })
+    }
+    const rate = Math.round((homework.submitted / homework.published) * 1000) / 10
+    if (rate < AT_RISK.submission_rate) {
+      signals.push({
+        code: 'low_submission_rate',
+        label: 'Low submission rate',
+        severity: 'warning',
+        detail: `Handed in ${homework.submitted} of ${homework.published} assignments (${rate}%).`,
+      })
+    }
+  }
+
+  const attendance = attendanceCounts(student.id)
+  const attendanceRate = attendanceRateOf(attendance)
+  if (attendanceRate !== null && attendanceRate < AT_RISK.attendance_rate) {
+    signals.push({
+      code: 'poor_attendance',
+      label: 'Poor attendance',
+      severity: 'warning',
+      detail: `Attendance is ${attendanceRate}% against a ${AT_RISK.attendance_rate}% expectation.`,
+    })
+  }
+
+  const quizzes = quizStats(student.id, scope)
+  if (quizzes?.percentage !== null && quizzes?.percentage !== undefined && quizzes.percentage < AT_RISK.quiz_average) {
+    signals.push({
+      code: 'low_quiz_average',
+      label: 'Low quiz scores',
+      severity: 'warning',
+      detail: `Averaging ${quizzes.percentage}% on auto-marked quizzes, below the ${AT_RISK.quiz_average}% expectation.`,
+    })
+  }
+
+  const klass = currentClassOf(student.id, student.school_id)
+
+  return {
+    // Duplicated from `student` deliberately: it is the list row key.
+    id: student.id,
+    student: {
+      id: student.id,
+      name: userName(student.user_id),
+      matricule: student.matricule,
+      class: { id: klass?.id ?? null, name: klass?.name ?? null },
+    },
+    average: overall,
+    signals,
+    severity: signals.some((signal) => signal.severity === 'critical')
+      ? 'critical'
+      : (signals.length > 0 ? 'warning' : null),
+    attendance: attendanceRate,
+    homework,
+    quizzes,
+  }
+}
+
+/** Students this caller may assess: admin sees the school, a teacher their classes. */
+const assessableStudents = (user, scope) => {
+  const year = currentYearFor(user.school_id)
+  if (!year) return []
+  return db.students.filter((student) => student.school_id === user.school_id
+    && db.enrollments.some((row) => Number(row.student_id) === Number(student.id)
+      && row.academic_year_id === year.id
+      && (!scope || scope.classes.includes(row.class_id))))
+}
+
+const riskSummary = (entries) => {
+  const flagged = entries.filter((entry) => entry.signals.length > 0)
+  const byClass = {}
+  flagged.forEach((entry) => {
+    const name = entry.student.class?.name ?? 'Unassigned'
+    byClass[name] = (byClass[name] ?? 0) + 1
+  })
+  return {
+    flagged: flagged.length,
+    critical: flagged.filter((entry) => entry.severity === 'critical').length,
+    warning: flagged.filter((entry) => entry.severity === 'warning').length,
+    monitored: entries.length - flagged.length,
+    by_class: Object.entries(byClass)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({ label, value })),
+  }
+}
+
+function analyticsOverview(config) {
+  const { user } = requireTenant(config)
+  const scope = user.role === 'admin' ? null : academicScope(user)
+  if (user.role !== 'admin' && !scope) throw fail(403, 'You have no classes assigned this year.')
+
+  const year = currentYearFor(user.school_id)
+  const students = assessableStudents(user, scope)
+  const ids = students.map((student) => student.id)
+  const entries = students.map((student) => assessStudent(student, scope))
+
+  const averages = entries.map((entry) => entry.average).filter((value) => value != null)
+  const passing = averages.filter((value) => value >= GRADING.pass_mark)
+
+  const byClassMap = {}
+  db.classes
+    .filter((klass) => klass.school_id === user.school_id && (!scope || scope.classes.includes(klass.id)))
+    .forEach((klass) => {
+      const enrolled = db.enrollments
+        .filter((row) => row.class_id === klass.id && row.academic_year_id === year?.id)
+        .map((row) => Number(row.student_id))
+
+      // A class with nobody in it is not a finding, and reporting its average
+      // as 0.0 would read as "this class is failing" rather than "no data".
+      if (enrolled.length === 0) return
+
+      const values = entries
+        .filter((entry) => enrolled.includes(Number(entry.student.id)) && entry.average != null)
+        .map((entry) => entry.average)
+      byClassMap[klass.name] = {
+        label: klass.name,
+        value: values.length === 0
+          ? null
+          : Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 100) / 100,
+        students: enrolled.length,
+      }
+    })
+
+  const buckets = GRADING.mentions.map((mention) => ({ label: mention.label, value: 0 }))
+  averages.forEach((value) => {
+    // Mentions are listed highest-first, so the first threshold met wins.
+    const index = GRADING.mentions.findIndex((mention) => value >= mention.min)
+    if (index >= 0) buckets[index].value += 1
+  })
+
+  const attendance = {}
+  db.attendances
+    .filter((row) => (!scope ? ids.includes(Number(row.student_id)) : scope.classes.includes(row.class_id)))
+    .forEach((row) => {
+      attendance[row.status] = (attendance[row.status] ?? 0) + 1
+    })
+  const attendedTotal = (attendance.present ?? 0) + (attendance.late ?? 0)
+  const countedTotal = attendedTotal + (attendance.absent ?? 0)
+
+  const assignments = db.homeworkAssignments.filter(
+    (row) => row.is_published && (!year || row.academic_year_id === year.id) && (!scope || inPairScope(row, scope)),
+  )
+  const submissions = db.homeworkSubmissions.filter(
+    (row) => row.submitted_at && assignments.some((assignment) => assignment.id === row.homework_assignment_id),
+  )
+  const expected = assignments.length * ids.length
+
+  const quizzes = db.quizzes.filter(
+    (row) => row.is_published && (!year || row.academic_year_id === year.id) && (!scope || inPairScope(row, scope)),
+  )
+  const attempts = db.quizAttempts.filter(
+    (row) => row.submitted_at && quizzes.some((quiz) => quiz.id === row.quiz_id),
+  )
+  const quizPercentages = attempts
+    .map((attempt) => {
+      const quiz = byId(db.quizzes, attempt.quiz_id)
+      const max = Number(quiz?.max_score ?? 0)
+      return max > 0 && attempt.score != null ? (Number(attempt.score) / max) * 100 : null
+    })
+    .filter((value) => value !== null)
+
+  return ok(config, {
+    data: {
+      academic_year: year ? { id: year.id, name: year.name } : null,
+      scope: scope
+        ? { type: 'teacher', classes: scope.classes.map((id) => byId(db.classes, id)?.name).filter(Boolean) }
+        : { type: 'school' },
+      counts: scope
+        ? {
+            students: ids.length,
+            classes: scope.classes.length,
+            subjects: new Set(scope.pairs.map((pair) => pair.split(':')[1])).size,
+            teachers: new Set(
+              db.teachingAssignments
+                .filter((row) => scope.classes.includes(row.class_id))
+                .map((row) => row.teacher_id),
+            ).size,
+          }
+        : {
+            students: db.students.filter((row) => row.school_id === user.school_id).length,
+            teachers: db.teachers.filter((row) => row.school_id === user.school_id).length,
+            classes: db.classes.filter((row) => row.school_id === user.school_id).length,
+            subjects: db.subjects.filter((row) => row.school_id === user.school_id).length,
+          },
+      performance: {
+        average: averages.length === 0
+          ? null
+          : Math.round((averages.reduce((sum, v) => sum + v, 0) / averages.length) * 100) / 100,
+        pass_rate: averages.length === 0
+          ? null
+          : Math.round((passing.length / averages.length) * 1000) / 10,
+        graded_students: averages.length,
+      },
+      by_class: Object.values(byClassMap),
+      distribution: buckets,
+      attendance: {
+        rate: countedTotal > 0 ? Math.round((attendedTotal / countedTotal) * 1000) / 10 : null,
+        records: Object.values(attendance).reduce((sum, value) => sum + value, 0),
+        present: attendance.present ?? 0,
+        late: attendance.late ?? 0,
+        absent: attendance.absent ?? 0,
+        excused: attendance.excused ?? 0,
+      },
+      engagement: {
+        assignments_published: assignments.length,
+        submissions: submissions.length,
+        submission_rate: expected > 0 ? Math.round((submissions.length / expected) * 1000) / 10 : null,
+        quizzes_published: quizzes.length,
+        quiz_attempts: attempts.length,
+        quiz_average: quizPercentages.length === 0
+          ? null
+          : Math.round((quizPercentages.reduce((sum, v) => sum + v, 0) / quizPercentages.length) * 10) / 10,
+      },
+      at_risk: riskSummary(entries),
+    },
+  })
+}
+
+function analyticsRegister(config) {
+  const { user } = requireTenant(config)
+  const params = config.params ?? {}
+  const scope = user.role === 'admin' ? null : academicScope(user)
+  if (user.role !== 'admin' && !scope) throw fail(403, 'You have no classes assigned this year.')
+
+  const classId = params.class_id ? Number(params.class_id) : null
+  const severity = ['warning', 'critical'].includes(params.severity) ? params.severity : null
+
+  let entries = assessableStudents(user, scope).map((student) => assessStudent(student, scope))
+
+  if (classId) {
+    entries = entries.filter((entry) => Number(entry.student.class?.id) === classId)
+  }
+  entries = entries.filter((entry) => entry.signals.length > 0)
+  if (severity) entries = entries.filter((entry) => entry.severity === severity)
+
+  // Worst first: critical, then lowest average, then name. Matches
+  // AtRiskService::compareEntries so the two backends cannot disagree on order.
+  // A missing average sorts last — no data is not the worst possible mark.
+  const rows = entries.sort(
+    (a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1)
+      || (a.average ?? Number.MAX_VALUE) - (b.average ?? Number.MAX_VALUE)
+      || a.student.name.localeCompare(b.student.name),
+  )
+
+  // `paginate` applies ?search= itself, so the searchable fields have to be
+  // declared here — filtering twice with an empty field list returns nothing.
+  return ok(config, paginate(config, rows, ['student.name', 'student.matricule']))
+}
+
+function analyticsStudent(config, match) {
+  const { user } = requireTenant(config)
+  const student = findStudentRow(config, match[1])
+
+  // A student may only review their own record.
+  if (user.role === 'student' && Number(student.user_id) !== Number(user.id)) {
+    throw fail(403, 'You can only review your own record.')
+  }
+
+  const scope = user.role === 'admin' ? null : academicScope(user)
+  if (user.role === 'teacher') {
+    const year = currentYearFor(user.school_id)
+    const enrolled = db.enrollments.some((row) => Number(row.student_id) === Number(student.id)
+      && row.academic_year_id === year?.id
+      && scope?.classes.includes(row.class_id))
+    if (!enrolled) throw fail(403, 'That student is not in one of your classes.')
+  }
+
+  return ok(config, { data: assessStudent(student, scope) })
+}
+
+function studentInsights(config) {
+  const { user, school } = requireTenant(config)
+  const student = db.students.find(
+    (row) => Number(row.user_id) === Number(user.id) && row.school_id === school.id,
+  )
+  if (!student) return ok(config, { data: { signals: [], average: null, severity: null, attendance: null, student: null } })
+
+  return ok(config, { data: assessStudent(student, null) })
+}
+
+
+/*
+ * Role guards for the analytics routes. The Laravel side enforces this with the
+ * `role:admin` / `role:teacher` route middleware; the mock has no route-level
+ * middleware, so the check has to live here or a student could read the whole
+ * school's numbers by asking for the admin path.
+ */
+function adminAnalyticsOverview(config) {
+  requireAdmin(config)
+  return analyticsOverview(config)
+}
+
+function adminAnalyticsRegister(config) {
+  requireAdmin(config)
+  return analyticsRegister(config)
+}
+
+function adminAnalyticsStudent(config, match) {
+  requireAdmin(config)
+  return analyticsStudent(config, match)
+}
+
+function teacherAnalyticsOverview(config) {
+  requireRole(config, 'teacher')
+  return analyticsOverview(config)
+}
+
+function teacherAnalyticsRegister(config) {
+  requireRole(config, 'teacher')
+  return analyticsRegister(config)
+}
+
+function teacherAnalyticsStudent(config, match) {
+  requireRole(config, 'teacher')
+  return analyticsStudent(config, match)
+}
+
+function studentInsightsRoute(config) {
+  requireRole(config, 'student')
+  return studentInsights(config)
+}
+
 const ROUTES = [
   ['post', /^\/login$/, login],
   ['post', /^\/logout$/, logout],
@@ -2002,6 +5421,7 @@ const ROUTES = [
   ['get', /^\/student\/grades$/, studentGrades],
   ['get', /^\/student\/report-card$/, studentReportCard],
   ['get', /^\/student\/timetable$/, studentTimetable],
+  ['get', /^\/student\/requests\/types$/, studentRequestTypes],
   ['get', /^\/student\/requests$/, studentListRequests],
   ['post', /^\/student\/requests$/, studentCreateRequest],
   ['get', /^\/student\/documents$/, studentListDocuments],
@@ -2024,6 +5444,7 @@ const ROUTES = [
   ['get', /^\/admin\/exams$/, adminListExams],
   ['post', /^\/admin\/exams$/, adminCreateExam],
   ['delete', /^\/admin\/exams\/(\d+)$/, adminDeleteExam],
+  ['post', /^\/admin\/import\/preview$/, adminImportPreview],
   ['post', /^\/admin\/import$/, adminImport],
   ['get', /^\/student\/attendance$/, studentAttendance],
   ['get', /^\/student\/transcript$/, studentTranscript],
@@ -2058,11 +5479,14 @@ const ROUTES = [
   ['delete', /^\/admin\/teaching-assignments\/(\d+)$/, adminDeleteAssignment],
   ['get', /^\/admin\/timetable$/, adminTimetable],
   ['post', /^\/admin\/timetable\/entries$/, adminCreateTimetableEntry],
+  ['put', /^\/admin\/timetable\/entries\/(\d+)$/, adminUpdateTimetableEntry],
   ['delete', /^\/admin\/timetable\/entries\/(\d+)$/, adminDeleteTimetableEntry],
   ['get', /^\/admin\/requests$/, adminListRequests],
+  ['get', /^\/admin\/requests\/triage$/, adminRequestTriage],
   ['post', /^\/admin\/requests\/(\d+)\/status$/, adminUpdateRequest],
   ['post', /^\/admin\/requests\/(\d+)\/generate-document$/, adminGenerateDocument],
   ['post', /^\/admin\/announcements$/, adminCreateAnnouncement],
+  ['post', /^\/admin\/announcements\/draft$/, adminDraftAnnouncement],
   ['get', /^\/super-admin\/dashboard$/, superAdminDashboard],
   ['get', /^\/super-admin\/schools$/, superAdminListSchools],
   ['post', /^\/super-admin\/schools$/, superAdminCreateSchool],
@@ -2089,7 +5513,82 @@ const ROUTES = [
   ['get', /^\/admin\/payments\/(\d+)\/receipt$/, adminPaymentReceiptPdf],
   ['get', /^\/admin\/audit-logs$/, adminAuditLogs],
   ['get', /^\/teacher\/timetable$/, teacherTimetable],
+
+  // Homework — the specific paths must precede the bare `/{id}` routes so the
+  // id pattern cannot swallow "/publish" and friends.
+  ['get', /^\/teacher\/homework$/, teacherHomeworkIndex],
+  ['post', /^\/teacher\/homework$/, teacherHomeworkStore],
+  ['get', /^\/teacher\/homework\/(\d+)\/submissions$/, teacherHomeworkSubmissions],
+  ['post', /^\/teacher\/homework\/(\d+)\/publish$/, teacherHomeworkPublish],
+  ['post', /^\/teacher\/homework\/(\d+)\/unpublish$/, teacherHomeworkUnpublish],
+  ['get', /^\/teacher\/homework\/(\d+)$/, teacherHomeworkShow],
+  ['put', /^\/teacher\/homework\/(\d+)$/, teacherHomeworkUpdate],
+  ['delete', /^\/teacher\/homework\/(\d+)$/, teacherHomeworkDestroy],
+  ['get', /^\/teacher\/homework-submissions\/(\d+)$/, teacherSubmissionShow],
+  ['post', /^\/teacher\/homework-submissions\/(\d+)\/grade$/, teacherSubmissionGrade],
+  ['get', /^\/student\/homework$/, studentHomeworkIndex],
+  ['post', /^\/student\/homework\/(\d+)\/submit$/, studentHomeworkSubmit],
+  ['get', /^\/attachments\/(\d+)\/download$/, attachmentDownload],
+
+  // Course materials.
+  ['get', /^\/teacher\/materials$/, teacherLessonIndex],
+  ['post', /^\/teacher\/materials$/, teacherLessonStore],
+  ['get', /^\/teacher\/materials\/(\d+)$/, teacherLessonShow],
+  ['put', /^\/teacher\/materials\/(\d+)$/, teacherLessonUpdate],
+  ['delete', /^\/teacher\/materials\/(\d+)$/, teacherLessonDestroy],
+  ['post', /^\/teacher\/materials\/(\d+)\/publish$/, teacherLessonPublish],
+  ['post', /^\/teacher\/materials\/(\d+)\/unpublish$/, teacherLessonUnpublish],
+  ['get', /^\/student\/materials$/, studentLessonIndex],
+  ['get', /^\/student\/materials\/(\d+)$/, studentLessonShow],
+
+  // Quizzes.
+  ['get', /^\/teacher\/quizzes$/, teacherQuizIndex],
+  ['post', /^\/teacher\/quizzes$/, teacherQuizStore],
+  ['get', /^\/teacher\/quizzes\/(\d+)\/results$/, teacherQuizResults],
+  ['post', /^\/teacher\/quizzes\/(\d+)\/publish$/, teacherQuizPublish],
+  ['post', /^\/teacher\/quizzes\/(\d+)\/unpublish$/, teacherQuizUnpublish],
+  ['get', /^\/teacher\/quizzes\/(\d+)$/, teacherQuizShow],
+  ['put', /^\/teacher\/quizzes\/(\d+)$/, teacherQuizUpdate],
+  ['delete', /^\/teacher\/quizzes\/(\d+)$/, teacherQuizDestroy],
+  ['get', /^\/teacher\/quiz-attempts\/(\d+)$/, teacherQuizAttemptShow],
+  ['post', /^\/teacher\/quiz-attempts\/(\d+)\/review$/, teacherQuizAttemptReview],
+  ['get', /^\/student\/quizzes$/, studentQuizIndex],
+  ['get', /^\/student\/quizzes\/(\d+)\/paper$/, studentQuizPaper],
+  ['post', /^\/student\/quizzes\/(\d+)\/submit$/, studentQuizSubmit],
+  ['get', /^\/student\/quiz-attempts\/(\d+)\/review$/, studentQuizReview],
   ['get', /^\/super-admin\/audit-logs$/, superAdminAuditLogs],
+
+  // Phase 5.5 — messaging, events, calendar
+  ['get', /^\/messages$/, messageIndex],
+  ['post', /^\/messages$/, messageStore],
+  ['get', /^\/messages\/recipients$/, messageRecipients],
+  ['get', /^\/messages\/unread$/, messageUnread],
+  ['post', /^\/messages\/(\d+)\/read$/, messageRead],
+  ['get', /^\/messages\/(\d+)$/, messageShow],
+  ['post', /^\/messages\/(\d+)$/, messageSend],
+  ['get', /^\/events$/, eventIndex],
+  ['get', /^\/events\/(\d+)$/, eventShow],
+  ['get', /^\/calendar$/, calendarIndex],
+  ['get', /^\/calendar\/today$/, calendarToday],
+
+  // Phase 5.6 — analytics and the pastoral register
+  ['get', /^\/admin\/analytics$/, adminAnalyticsOverview],
+  ['get', /^\/admin\/analytics\/at-risk$/, adminAnalyticsRegister],
+  ['get', /^\/admin\/analytics\/students\/(\d+)$/, adminAnalyticsStudent],
+  ['get', /^\/teacher\/analytics$/, teacherAnalyticsOverview],
+  ['get', /^\/teacher\/students\/(\d+)\/report-card-comment$/, teacherShowComment],
+  ['post', /^\/teacher\/students\/(\d+)\/report-card-comment\/draft$/, teacherDraftComment],
+  ['put', /^\/teacher\/students\/(\d+)\/report-card-comment$/, teacherSaveComment],
+  ['get', /^\/teacher\/analytics\/at-risk$/, teacherAnalyticsRegister],
+  ['get', /^\/teacher\/analytics\/students\/(\d+)$/, teacherAnalyticsStudent],
+  ['get', /^\/student\/insights$/, studentInsightsRoute],
+  ['get', /^\/admin\/events$/, adminEventIndex],
+  ['post', /^\/admin\/events$/, adminEventStore],
+  ['get', /^\/admin\/events\/(\d+)$/, adminEventShow],
+  ['put', /^\/admin\/events\/(\d+)$/, adminEventUpdate],
+  ['post', /^\/admin\/events\/(\d+)\/publish$/, adminEventPublish],
+  ['post', /^\/admin\/events\/(\d+)\/unpublish$/, adminEventUnpublish],
+  ['delete', /^\/admin\/events\/(\d+)$/, adminEventDestroy],
   ['get', /^\/super-admin\/payments\/(\d+)\/receipt$/, superAdminPaymentReceiptPdf],
 ]
 
@@ -2105,7 +5604,19 @@ export function installMockAdapter(client) {
     const query = Object.fromEntries(new URLSearchParams(queryString ?? ''))
     config.params = { ...query, ...(config.params ?? {}) }
 
-    const method = String(config.method ?? 'get').toLowerCase()
+    let method = String(config.method ?? 'get').toLowerCase()
+
+    // Laravel honours a `_method` field on POST (used for multipart PUT/DELETE,
+    // which browsers cannot send as files otherwise). Mirror it so the mock
+    // routes match the real API.
+    if (method === 'post') {
+      const data = config.data
+      const override =
+        data instanceof FormData
+          ? data.get('_method')
+          : (readBody(config)?._method ?? null)
+      if (override) method = String(override).toLowerCase()
+    }
 
     for (const [routeMethod, pattern, handler] of ROUTES) {
       if (routeMethod !== method) continue

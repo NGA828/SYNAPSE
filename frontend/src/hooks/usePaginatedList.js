@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * (see App\Http\Concerns\HandlesPagination). Search input is debounced so
  * typing does not fire a request per keystroke.
  */
-export function usePaginatedList(fetcher, { perPage = 15, sort, debounce = 350 } = {}) {
+export function usePaginatedList(fetcher, { perPage = 15, sort, debounce = 350, refreshKey } = {}) {
   const [rows, setRows] = useState([])
   const [meta, setMeta] = useState(null)
   const [page, setPage] = useState(1)
@@ -55,7 +55,12 @@ export function usePaginatedList(fetcher, { perPage = 15, sort, debounce = 350 }
     } finally {
       setLoading(false)
     }
-  }, [page, perPage, debouncedSearch, sort])
+  // `refreshKey` is not read inside the callback: it is a trigger. Callers pass
+  // it so a filter their fetcher closes over refetches when it changes. It is a
+  // primitive on purpose — an array literal would be a new identity every
+  // render and loop for ever.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, debouncedSearch, sort, refreshKey])
 
   useEffect(() => {
     // Deferred to a microtask so the first setState happens outside the

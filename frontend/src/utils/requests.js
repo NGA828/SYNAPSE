@@ -12,9 +12,9 @@ export const REQUEST_STATUS_META = {
   rejected: { label: 'Rejected', variant: 'danger', step: -1 },
 }
 
-export const REQUEST_TYPES = [
-  'Certificate of Enrollment',
-  'Transcript Request',
-  'Recommendation Letter',
-  'Other',
-]
+/*
+ * The list of requestable documents is served by GET /student/requests/types
+ * rather than duplicated here. A second copy is how the client and the server
+ * drift, and the drift is what let a student ask for a document the school
+ * could not issue.
+ */
