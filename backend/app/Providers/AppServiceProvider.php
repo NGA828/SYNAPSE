@@ -4,7 +4,10 @@ namespace App\Providers;
 
 use App\Services\Sms\SmsManager;
 use App\Services\TenantContext;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -27,13 +30,21 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Fail loudly in development when a mass-assignment silently drops an
-        // attribute (lazy loading stays allowed — the app relies on it).
         Model::preventSilentlyDiscardingAttributes(! $this->app->isProduction());
 
-        // Signed links (document verification) must use the public URL.
         if ($this->app->isProduction()) {
             URL::forceScheme('https');
         }
+
+        RateLimiter::for('login', function (Request $request) {
+            return [
+                Limit::perMinute(5)->by($request->input('email').'|'.$request->ip()),
+                Limit::perMinute(20)->by($request->ip()),
+            ];
+        });
+
+        RateLimiter::for('password', function (Request $request) {
+            return Limit::perMinutes(15, 5)->by($request->input('email').'|'.$request->ip());
+        });
     }
 }
