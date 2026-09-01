@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\DocumentTypeService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -19,6 +20,9 @@ class DocumentRequestResource extends JsonResource
             'id' => $this->id,
             'reference' => $this->reference,
             'type' => $this->type,
+            // Triage is computed here rather than stored, so it cannot go stale
+            // when the classification rules improve.
+            'triage' => app(DocumentTypeService::class)->triage($this->resource),
             'reason' => $this->reason,
             'status' => $this->status,
             'admin_note' => $this->admin_note,

@@ -7,10 +7,19 @@ use App\Models\Announcement;
 use App\Models\Attendance;
 use App\Models\Document;
 use App\Models\DocumentRequest;
+use App\Models\Conversation;
 use App\Models\Enrollment;
+use App\Models\Event;
 use App\Models\Exam;
 use App\Models\Grade;
 use App\Models\GradeComponent;
+use App\Models\HomeworkAssignment;
+use App\Models\HomeworkSubmission;
+use App\Models\Lesson;
+use App\Models\Message;
+use App\Models\Quiz;
+use App\Models\QuizAttempt;
+use App\Models\QuizQuestion;
 use App\Models\Notification;
 use App\Models\School;
 use App\Models\SchoolClass;
@@ -236,6 +245,15 @@ class DatabaseSeeder extends Seeder
             $this->slot($school, $l3a, $current, $subject, $day, $start, $end);
         }
 
+        /*
+         * A second class, so a teacher holding both (Mr. David teaches English
+         * to 3A and 2A) sees every period on their calendar rather than only
+         * the first class they were assigned.
+         */
+        foreach ([[1, '12:00', '13:00', $english], [3, '12:00', '13:00', $english]] as [$day, $start, $end, $subject]) {
+            $this->slot($school, $l2a, $current, $subject, $day, $start, $end);
+        }
+
         // Attendance (recent school days)
         $this->attendance($school, $l3a, $current, $davidT, $johnS, now()->toDateString(), Attendance::PRESENT);
         $this->attendance($school, $l3a, $current, $davidT, $maryS, now()->toDateString(), Attendance::PRESENT);
@@ -275,7 +293,233 @@ class DatabaseSeeder extends Seeder
         $this->exam($school, $current, $semester1, $math, $l3a, now()->addDays(15)->toDateString(), '08:00', '10:00', 'Hall A');
         $this->exam($school, $current, $semester1, $database, $l3a, now()->addDays(16)->toDateString(), '10:00', '12:00', 'Lab 2');
 
+        // Homework: one closed + graded item, one open awaiting marks, one open
+        // with nothing submitted yet, and one unpublished draft. This mirrors
+        // the mock dataset so both modes demo the same lifecycle.
+        $essay = $this->homework(
+            $school, $davidT, $english, $l3a, $current, $semester1,
+            'Essay: The Role of Technology in Education',
+            'Write a 500-word argumentative essay. Use at least three examples and end with your own position.',
+            now()->subDays(2),
+        );
+
+        $this->submission($school, $essay, $johnS, 'Technology has reshaped how knowledge reaches the classroom. First, digital libraries remove the cost barrier to reference material...', now()->subDays(3));
+        $this->gradeSubmission($essay, $johnS, $davidT, 16.5, 'Well structured with a clear position. Develop your second example further.');
+        $this->submission($school, $essay, $maryS, 'In my view technology helps students learn faster because information is available everywhere...', now()->subDay());
+
+        $quadratics = $this->homework(
+            $school, $sarahT, $math, $l3a, $current, $semester1,
+            'Quadratic Equations — Exercise 4B',
+            'Solve questions 1 to 10 of Exercise 4B. Show every step of your working, not only the final answer.',
+            now()->addDays(3),
+        );
+
+        $this->submission($school, $quadratics, $johnS, 'Question 1: x² - 5x + 6 = 0, so (x - 2)(x - 3) = 0, giving x = 2 or x = 3.', now());
+
+        $this->homework(
+            $school, $davidT, $history, $l3a, $current, $semester1,
+            'Research: Causes of the First World War',
+            'Summarise the four long-term causes in your own words, one paragraph each.',
+            now()->addDays(7),
+        );
+
+        $draft = $this->homework(
+            $school, $davidT, $english, $l3a, $current, $semester1,
+            'Comprehension: Draft Questions',
+            null,
+            now()->addDays(14),
+        );
+        $draft->update(['is_published' => false, 'published_at' => null]);
+
+        // Course materials: two topics under English, one under History, one in
+        // another class, and one draft. Mirrors the mock dataset.
+        $this->lesson(
+            $school, $davidT, $english, $l3a, $current, $semester1,
+            'Argumentative Writing: Building a Thesis', 'Essay Writing', 1, 15,
+            'How to turn an opinion into a defensible thesis, and how to support it with evidence.',
+            'A thesis is a claim a reader could reasonably disagree with, plus the reason it holds. Start from your conclusion and work backwards to the strongest evidence you have. Then test it: if nobody could disagree, it is a topic, not a thesis. Revise until the sentence carries both the claim and the reason.',
+            now()->subDays(6),
+        );
+
+        $this->lesson(
+            $school, $davidT, $english, $l3a, $current, $semester1,
+            'Citing Sources Without Plagiarising', 'Essay Writing', 2, null,
+            'Quotation, paraphrase and summary — and when to use each.',
+            'Quoting preserves exact wording, paraphrase restates an idea in your own words, and summary compresses several paragraphs into one. Plagiarism is not only copying: presenting a paraphrase without attribution counts too. Cite the author and year at the point of use.',
+            now()->subDays(2),
+        );
+
+        $this->lesson(
+            $school, $davidT, $history, $l3a, $current, $semester1,
+            'Long-term Causes of the First World War', 'The World Wars', 1, null,
+            'Militarism, alliances, imperialism and nationalism — the MAIN framework.',
+            'Militarism meant arms races and war plans that assumed mobilisation. Alliances turned a regional dispute into a continental one. Imperialism created rivalries over territory and markets. Nationalism supplied both the will to fight and the grievances that made it feel justified.',
+            now()->subDay(),
+        );
+
+        $this->lesson(
+            $school, $sarahT, $math, $l3a, $current, $semester1,
+            'Solving Quadratic Equations by Factorisation', 'Algebra', 1, 20,
+            'Factorising ax2 + bx + c, and recognising when the method will not work.',
+            'Factorisation works when the quadratic has rational roots. Move every term to one side so the equation equals zero, then find two numbers that multiply to ac and add to b. Split the middle term, factor by grouping, and set each bracket to zero.',
+            now()->subDays(4),
+        );
+
+        $this->lesson(
+            $school, $davidT, $english, $l2a, $current, $semester1,
+            'Persuasive Speech Structure', 'Speech Writing', 1, 12,
+            'Hook, argument, counter-argument and close — for Level 2A.',
+            'A speech has one job: to be followed out loud. Signpost every turn, repeat the central claim three times in different words, and leave the strongest point for last.',
+            now()->subDays(5),
+        );
+
+        $lessonDraft = $this->lesson(
+            $school, $davidT, $english, $l3a, $current, $semester1,
+            'Draft: Poetry Analysis Framework', 'Poetry', 3, null,
+            null, null,
+            now()->subDay(),
+        );
+        $lessonDraft->update(['is_published' => false, 'published_at' => null]);
+
+        // Auto-marked quizzes: an open English paper, an open Mathematics one,
+        // a closed History paper with a graded attempt, and a draft.
+        $grammar = $this->quiz(
+            $school, $davidT, $english, $l3a, $current, $semester1,
+            'Grammar Check: Tenses and Agreement', 20, 20, now()->addDays(5),
+            'Choose the one correct option for each sentence. There is no negative marking.',
+        );
+        $this->question($grammar, 'Choose the sentence with correct subject-verb agreement.',
+            ['The list of items are on the desk.', 'The list of items is on the desk.', 'The list of items were on the desk.'], 1, 5, 1);
+        $this->question($grammar, 'Which sentence uses the past perfect correctly?',
+            ['She had left before we arrived.', 'She has left before we arrived.', 'She have left before we arrived.'], 0, 5, 2);
+        $this->question($grammar, 'Select the correct passive form of "The teacher marked the papers."',
+            ['The papers was marked by the teacher.', 'The papers were marked by the teacher.', 'The papers marked by the teacher.'], 1, 5, 3);
+        $this->question($grammar, 'Which word is a subordinating conjunction?',
+            ['and', 'but', 'although', 'or'], 2, 5, 4);
+
+        $algebra = $this->quiz(
+            $school, $sarahT, $math, $l3a, $current, $semester1,
+            'Algebra Drill: Linear Equations', 20, 30, now()->addDays(9),
+            'Work without a calculator.',
+        );
+        $this->question($algebra, 'Solve for x: 3x + 7 = 22', ['x = 3', 'x = 5', 'x = 7'], 1, 5, 1);
+        $this->question($algebra, 'Solve for y: 2(y - 4) = 10', ['y = 3', 'y = 7', 'y = 9'], 2, 5, 2);
+        $this->question($algebra, 'Which line is parallel to y = 2x + 1?',
+            ['y = -2x + 1', 'y = 2x - 5', 'y = x/2 + 1'], 1, 5, 3);
+        $this->question($algebra, 'If 5a - 3 = 2a + 9, then a =', ['a = 2', 'a = 3', 'a = 4'], 2, 5, 4);
+
+        $wars = $this->quiz(
+            $school, $davidT, $history, $l3a, $current, $semester1,
+            'History Quiz: The World Wars', 20, null, now()->subDay(),
+            null,
+        );
+        $this->question($wars, 'In which year did the First World War begin?', ['1912', '1914', '1916'], 1, 5, 1);
+        $this->question($wars, 'The "MAIN" framework of long-term causes stands for:',
+            ['Money, Arms, Industry, Nations', 'Militarism, Alliances, Imperialism, Nationalism', 'Monarchy, Army, Invasion, Negotiation'], 1, 5, 2);
+        $this->question($wars, 'Which event is generally taken as the immediate trigger of the First World War?',
+            ['The sinking of the Lusitania', 'The assassination at Sarajevo', 'The Treaty of Versailles'], 1, 5, 3);
+        $this->question($wars, 'The Second World War ended in:', ['1943', '1944', '1945'], 2, 5, 4);
+
+        // One completed attempt, so the results view has something to show.
+        // Three of four right: 15 of 20.
+        QuizAttempt::firstOrCreate(
+            [
+                'quiz_id' => $wars->id,
+                'student_id' => $johnS->id,
+                'attempt' => 1,
+            ],
+            [
+                'school_id' => $school->id,
+                'answers' => [
+                    $wars->questions()->where('sequence', 1)->value('id') => 1,
+                    $wars->questions()->where('sequence', 2)->value('id') => 1,
+                    $wars->questions()->where('sequence', 3)->value('id') => 0,
+                    $wars->questions()->where('sequence', 4)->value('id') => 2,
+                ],
+                'correct_count' => 3,
+                'total_questions' => 4,
+                'score' => 15,
+                'started_at' => now()->subDays(10),
+                'submitted_at' => now()->subDays(10)->addMinutes(18),
+                'feedback' => 'Strong on dates. Revisit the Sarajevo trigger before the exam.',
+                'is_reviewed' => true,
+                'reviewed_at' => now()->subDays(9),
+                'reviewed_by' => $davidT->id,
+            ],
+        );
+        $wars->update(['is_locked' => true]);
+
+        $quizDraft = $this->quiz(
+            $school, $davidT, $english, $l3a, $current, $semester1,
+            'Draft: Comprehension Skills', 20, 15, null,
+            null,
+        );
+        $quizDraft->update(['is_published' => false, 'published_at' => null]);
+
+        // Events — a mix of audiences, plus one draft that stays private.
+        $this->event($school, $chen, 'First Semester Examinations Begin', 'Examinations run for two weeks. Arrive 30 minutes early.', Event::TYPE_EXAM, now()->addDays(7)->setTime(8, 0), now()->addDays(18)->setTime(14, 0), false, 'Hall A', Event::AUDIENCE_ALL, true);
+        $this->event($school, $chen, 'Monday Assembly', 'Whole school assembly on the main field.', Event::TYPE_ASSEMBLY, now()->addDay()->setTime(7, 30), now()->addDay()->setTime(8, 15), false, 'Main Field', Event::AUDIENCE_STUDENTS, true);
+        $this->event($school, $chen, 'Staff Meeting', 'Assessment moderation and the new marking policy.', Event::TYPE_MEETING, now()->addDays(3)->setTime(15, 0), now()->addDays(3)->setTime(16, 30), false, 'Staff Room', Event::AUDIENCE_TEACHERS, true);
+        $this->event($school, $chen, 'Inter-house Sports Day', null, Event::TYPE_SPORTS, now()->addDays(25)->setTime(8, 0), now()->addDays(25)->setTime(16, 0), false, 'Sports Complex', Event::AUDIENCE_ALL, true);
+        $this->event($school, $chen, 'Mid-term Break', 'School closed.', Event::TYPE_HOLIDAY, now()->addDays(30), null, true, null, Event::AUDIENCE_ALL, true);
+        $this->event($school, $chen, 'Parent-Teacher Consultation', null, Event::TYPE_MEETING, now()->addDays(40)->setTime(9, 0), now()->addDays(40)->setTime(13, 0), false, 'Classrooms', Event::AUDIENCE_ALL, false);
+
+        // One open thread: a student asking a teacher about a deadline.
+        [$a, $b] = $david->id < $john->id ? [$david->id, $john->id] : [$john->id, $david->id];
+        $conversation = Conversation::firstOrCreate([
+            'school_id' => $school->id,
+            'participant_a_id' => $a,
+            'participant_b_id' => $b,
+        ], ['last_message_at' => now()->subDay()]);
+
+        Message::firstOrCreate([
+            'conversation_id' => $conversation->id,
+            'body' => 'Good afternoon sir. Is the essay due this Friday or next Monday?',
+        ], [
+            'school_id' => $school->id,
+            'sender_id' => $john->id,
+            'read_at' => now()->subDay(),
+        ]);
+        Message::firstOrCreate([
+            'conversation_id' => $conversation->id,
+            'body' => 'This Friday. Submit it through the homework page so it is recorded.',
+        ], [
+            'school_id' => $school->id,
+            'sender_id' => $david->id,
+            'read_at' => null,
+        ]);
+
         return $school;
+    }
+
+    private function event(
+        School $school,
+        User $author,
+        string $title,
+        ?string $description,
+        string $type,
+        \Illuminate\Support\Carbon $startsAt,
+        ?\Illuminate\Support\Carbon $endsAt,
+        bool $allDay,
+        ?string $location,
+        string $audience,
+        bool $published,
+    ): Event {
+        return Event::firstOrCreate(
+            ['school_id' => $school->id, 'title' => $title],
+            [
+                'user_id' => $author->id,
+                'description' => $description,
+                'type' => $type,
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'all_day' => $allDay,
+                'location' => $location,
+                'audience' => $audience,
+                'is_published' => $published,
+                'published_at' => $published ? now()->subDays(2) : null,
+            ],
+        );
     }
 
     private function seedSchoolSaintAlbert(SubscriptionPlan $plan): School
@@ -456,6 +700,176 @@ class DatabaseSeeder extends Seeder
                 'exam' => $exam,
             ],
         );
+    }
+
+    /**
+     * A published piece of homework. Unpublish afterwards by updating the row.
+     */
+    private function homework(
+        School $school,
+        Teacher $teacher,
+        Subject $subject,
+        SchoolClass $class,
+        AcademicYear $year,
+        Semester $semester,
+        string $title,
+        ?string $instructions,
+        \Illuminate\Support\Carbon $dueAt,
+    ): HomeworkAssignment {
+        return HomeworkAssignment::firstOrCreate(
+            [
+                'school_id' => $school->id,
+                'class_id' => $class->id,
+                'subject_id' => $subject->id,
+                'academic_year_id' => $year->id,
+                'title' => $title,
+            ],
+            [
+                'teacher_id' => $teacher->id,
+                'semester_id' => $semester->id,
+                'instructions' => $instructions,
+                'max_score' => 20,
+                'due_at' => $dueAt->setTime(23, 59),
+                'is_published' => true,
+                'published_at' => $dueAt->copy()->subDays(7),
+            ],
+        );
+    }
+
+    /**
+     * A published lesson. Unpublish afterwards by updating the row.
+     */
+    private function lesson(
+        School $school,
+        Teacher $teacher,
+        Subject $subject,
+        SchoolClass $class,
+        AcademicYear $year,
+        Semester $semester,
+        string $title,
+        string $topic,
+        int $sequence,
+        ?int $minutes,
+        ?string $summary,
+        ?string $body,
+        \Illuminate\Support\Carbon $publishedAt,
+    ): Lesson {
+        return Lesson::firstOrCreate(
+            [
+                'school_id' => $school->id,
+                'class_id' => $class->id,
+                'subject_id' => $subject->id,
+                'academic_year_id' => $year->id,
+                'title' => $title,
+            ],
+            [
+                'teacher_id' => $teacher->id,
+                'semester_id' => $semester->id,
+                'topic' => $topic,
+                'summary' => $summary,
+                'body' => $body,
+                'minutes' => $minutes,
+                'sequence' => $sequence,
+                'is_published' => true,
+                'published_at' => $publishedAt,
+            ],
+        );
+    }
+
+    /**
+     * A published quiz. Unpublish afterwards by updating the row.
+     */
+    private function quiz(
+        School $school,
+        Teacher $teacher,
+        Subject $subject,
+        SchoolClass $class,
+        AcademicYear $year,
+        Semester $semester,
+        string $title,
+        int $maxScore,
+        ?int $timeLimit,
+        ?\Illuminate\Support\Carbon $closesAt,
+        ?string $instructions,
+    ): Quiz {
+        return Quiz::firstOrCreate(
+            [
+                'school_id' => $school->id,
+                'class_id' => $class->id,
+                'subject_id' => $subject->id,
+                'academic_year_id' => $year->id,
+                'title' => $title,
+            ],
+            [
+                'teacher_id' => $teacher->id,
+                'semester_id' => $semester->id,
+                'instructions' => $instructions,
+                'max_score' => $maxScore,
+                'time_limit_minutes' => $timeLimit,
+                'closes_at' => $closesAt,
+                'attempts_allowed' => 1,
+                'is_published' => true,
+                'published_at' => ($closesAt ?? now())->copy()->subDays(2),
+            ],
+        );
+    }
+
+    /**
+     * @param  list<string>  $options
+     */
+    private function question(Quiz $quiz, string $prompt, array $options, int $correct, int $points, int $sequence): void
+    {
+        QuizQuestion::firstOrCreate(
+            ['quiz_id' => $quiz->id, 'sequence' => $sequence],
+            [
+                'school_id' => $quiz->school_id,
+                'prompt' => $prompt,
+                'options' => $options,
+                'correct_option' => $correct,
+                'points' => $points,
+            ],
+        );
+    }
+
+    private function submission(
+        School $school,
+        HomeworkAssignment $homework,
+        Student $student,
+        string $content,
+        \Illuminate\Support\Carbon $submittedAt,
+    ): HomeworkSubmission {
+        return HomeworkSubmission::firstOrCreate(
+            [
+                'homework_assignment_id' => $homework->id,
+                'student_id' => $student->id,
+            ],
+            [
+                'school_id' => $school->id,
+                'content' => $content,
+                'attempts' => 1,
+                'submitted_at' => $submittedAt,
+                'is_late' => false,
+            ],
+        );
+    }
+
+    private function gradeSubmission(
+        HomeworkAssignment $homework,
+        Student $student,
+        Teacher $teacher,
+        float $score,
+        ?string $feedback,
+    ): void {
+        HomeworkSubmission::query()
+            ->where('homework_assignment_id', $homework->id)
+            ->where('student_id', $student->id)
+            ->update([
+                'score' => $score,
+                'feedback' => $feedback,
+                'graded_by' => $teacher->id,
+                'graded_at' => now(),
+                'returned_at' => now(),
+            ]);
     }
 
     private function semester(School $school, AcademicYear $year, string $name, int $sequence, bool $current): Semester

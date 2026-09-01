@@ -2,6 +2,7 @@
 
 namespace App\Services\Pdf;
 
+use App\Services\CommentService;
 use Illuminate\Support\Str;
 
 /**
@@ -10,6 +11,10 @@ use Illuminate\Support\Str;
  */
 class ReportCardPresenter
 {
+    public function __construct(
+        private readonly CommentService $comments,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $reportCard  Output of GradeService::reportCard()
      * @return array<string, mixed>
@@ -53,7 +58,9 @@ class ReportCardPresenter
             'scale' => $scale == (int) $scale ? (int) $scale : $scale,
             'mention' => $average === null ? '—' : $this->mention((float) $average),
             'subjects_count' => count($rows),
-            'comment' => $this->comment($average, $reportCard['rank'] ?? null),
+            // A teacher's locked comment wins; otherwise the comment is written
+            // from the figures already on this card. See CommentService.
+            'comment' => $this->comments->resolveFromArray($reportCard),
         ];
     }
 
@@ -122,22 +129,5 @@ class ReportCardPresenter
         }
 
         return '—';
-    }
-
-    private function comment(mixed $average, mixed $rank): ?string
-    {
-        if ($average === null) {
-            return null;
-        }
-
-        $mention = $this->mention((float) $average);
-        $rankText = $rank ? " Ranked {$rank} in class." : '';
-
-        return match (true) {
-            (float) $average >= 16 => "Outstanding work — keep it up.{$rankText}",
-            (float) $average >= 12 => "Satisfactory results overall.{$rankText} Consistent effort will lift the average further.",
-            (float) $average >= 10 => "Average performance.{$rankText} More regular revision is needed.",
-            default => "Results are below the pass mark.{$rankText} Remedial support is strongly recommended.",
-        };
     }
 }

@@ -14,6 +14,7 @@ use App\Services\Pdf\ReportCardPresenter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -30,6 +31,7 @@ class DocumentService
         private readonly GradeService $grades,
         private readonly TranscriptService $transcripts,
         private readonly ReportCardPresenter $presenter,
+        private readonly DocumentTypeService $documentTypes,
     ) {}
 
     /**
@@ -296,40 +298,49 @@ class DocumentService
             'Request reference' => $request->reference,
         ]);
 
-        $type = Str::of($request->type)->lower();
+        // Match on the canonical type, resolved through the classifier so a
+        // request filed as free text still lands on the right document.
+        $resolved = $this->documentTypes->classify($request->type);
 
-        [$title, $body] = match (true) {
-            $type->contains('enrol') || $type->contains('attendance certificate') => [
+        [$title, $body] = match ($resolved) {
+            DocumentRequest::TYPE_ENROLLMENT => [
                 'Certificate of Enrollment',
                 "This is to certify that <b>{$name}</b> (matricule {$matricule}) is duly enrolled at {$schoolName}"
                     .($class ? " in class <b>{$class}</b>" : '')
                     .($year ? " for the {$year} academic year" : '').'.',
             ],
-            $type->contains('transcript') => [
+            DocumentRequest::TYPE_TRANSCRIPT => [
                 'Attestation of Academic Records',
                 "This is to certify that the academic records of <b>{$name}</b> (matricule {$matricule}) are held by {$schoolName} and may be released on request.",
             ],
-            $type->contains('transfer') => [
+            DocumentRequest::TYPE_TRANSFER => [
                 'Transfer Certificate',
                 "This is to certify that <b>{$name}</b> (matricule {$matricule}) was a student of {$schoolName}"
                     .($class ? " in class <b>{$class}</b>" : '')
                     .' and has been granted a transfer at their own request. All school obligations have been settled.',
             ],
-            $type->contains('conduct') || $type->contains('good standing') => [
+            DocumentRequest::TYPE_GOOD_CONDUCT => [
                 'Certificate of Good Conduct',
                 "This is to certify that <b>{$name}</b> (matricule {$matricule}) has, throughout their stay at {$schoolName}, maintained satisfactory conduct and discipline.",
             ],
-            $type->contains('leaving') || $type->contains('graduat') => [
+            DocumentRequest::TYPE_LEAVING => [
                 'School Leaving Certificate',
                 "This is to certify that <b>{$name}</b> (matricule {$matricule}) has completed their studies at {$schoolName}"
                     .($year ? " at the end of the {$year} academic year" : '').'.',
             ],
-            default => [
-                Str::title($request->type),
-                "This is to certify that <b>{$name}</b> (matricule {$matricule}) is known to {$schoolName}. "
-                    .'This document is issued in response to their request'
-                    .($request->reason ? ' concerning: '.e($request->reason) : '').'.',
-            ],
+
+            /*
+            | No silent default. This arm used to emit a generic "is known to
+            | this school" certificate for anything it did not recognise, the
+            | request was then marked ready, and the student was told their
+            | document was available — so a pupil who asked for a recommendation
+            | letter was handed a document that was not what they asked for,
+            | with nothing anywhere to say so. Refusing is the correct failure.
+            */
+            default => throw ValidationException::withMessages([
+                'type' => $this->documentTypes->triage($request)['reason']
+                    ?? 'This document cannot be generated automatically.',
+            ]),
         };
 
         return [

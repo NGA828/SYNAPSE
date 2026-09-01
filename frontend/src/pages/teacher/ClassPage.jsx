@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { BookOpen, ShieldAlert } from 'lucide-react'
+import { BookOpen, MessageSquareText, ShieldAlert } from 'lucide-react'
 import { useAsyncList } from '../../hooks/useAsyncList.js'
 import { getClassStudents } from '../../services/teacherService.js'
 import { PageContainer } from '../../components/layout/PageContainer.jsx'
@@ -36,6 +36,19 @@ export default function ClassPage() {
       ),
     },
     { key: 'matricule', header: 'Matricule', cellClassName: 'font-mono text-xs text-slate-600' },
+    {
+      key: 'comment',
+      header: '',
+      align: 'right',
+      render: (student) => (
+        <Link to={`/teacher/students/${student.id}/comment`}>
+          <Button variant="secondary" size="sm">
+            <MessageSquareText className="size-4" aria-hidden="true" />
+            Comment
+          </Button>
+        </Link>
+      ),
+    },
   ]
 
   return (

@@ -9,7 +9,9 @@ class ReportCardPresenterTest extends TestCase
 {
     private function presenter(): ReportCardPresenter
     {
-        return new ReportCardPresenter();
+        // Resolved rather than constructed: the presenter now takes a
+        // CommentService, and the container is the honest way to build it.
+        return app(ReportCardPresenter::class);
     }
 
     private function reportCard(array $grades, ?float $average, ?int $rank = null): array

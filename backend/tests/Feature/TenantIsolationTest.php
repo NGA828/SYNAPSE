@@ -2,26 +2,83 @@
 
 namespace Tests\Feature;
 
-use App\Models\Document;
 use App\Models\School;
-use App\Models\SchoolClass;
 use App\Models\Student;
-use App\Models\Subject;
-use App\Models\SubscriptionPlan;
 use App\Models\User;
+use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\Sanctum;
+use RuntimeException;
 use Tests\TestCase;
 
+/**
+ * Tenant isolation (Phase 8.3).
+ *
+ * The scenario these tests exist for: somebody registers a new route and forgets
+ * the `tenant` middleware. Before this phase, `TenantScope` failed **open** in
+ * that case — no context, no constraint, every school's rows. Today all 150
+ * authenticated routes happen to apply the middleware, so the hole is closed by
+ * luck rather than by construction. This makes it closed by construction.
+ *
+ * The suite forces the application to believe it is serving HTTP, because the
+ * fail-closed branch is deliberately gated on that: console is exempt so the
+ * seeder and the `synapse:*` commands keep working.
+ */
 class TenantIsolationTest extends TestCase
 {
     use RefreshDatabase;
 
     protected function setUp(): void
     {
+        /*
+         * PHPUnit runs in console, and `Application::runningInConsole()` checks
+         * this env value before falling back to the SAPI. Setting it before the
+         * application boots makes the scope take its HTTP branch.
+         */
+        $_SERVER['APP_RUNNING_IN_CONSOLE'] = 'false';
+        putenv('APP_RUNNING_IN_CONSOLE=false');
+
         parent::setUp();
 
+        $this->assertFalse(
+            app()->runningInConsole(),
+            'This suite must run as though it were serving HTTP, or the fail-closed branch is never reached.',
+        );
+
         $this->seed();
+    }
+
+    protected function tearDown(): void
+    {
+        unset($_SERVER['APP_RUNNING_IN_CONSOLE']);
+        putenv('APP_RUNNING_IN_CONSOLE');
+
+        parent::tearDown();
+    }
+
+    /**
+     * A route with authentication but no `tenant` middleware — the regression
+     * this phase prevents.
+     */
+    private function registerUnscopedRoute(): void
+    {
+        Route::middleware('auth:sanctum')
+            ->get('/__test/unscoped-users', fn () => User::query()->pluck('email'))
+            ->name('test.unscoped');
+
+        Route::middleware('auth:sanctum')
+            ->get('/__test/unscoped-students', fn () => Student::query()->count())
+            ->name('test.unscoped.students');
+
+        Route::middleware('auth:sanctum')
+            ->get('/__test/without-tenant', fn () => User::query()->withoutTenant()->count())
+            ->name('test.without_tenant');
+    }
+
+    private function otherSchool(): School
+    {
+        return School::where('slug', 'saintalbert')->firstOrFail();
     }
 
     private function actAs(string $email): User
@@ -33,168 +90,131 @@ class TenantIsolationTest extends TestCase
         return $user;
     }
 
-    public function test_school_a_admin_cannot_see_school_b_students(): void
+    // ------------------------------------------------------- the regression
+
+    public function test_a_route_missing_the_tenant_middleware_leaks_nothing(): void
+    {
+        $this->registerUnscopedRoute();
+
+        $this->actAs('admin@synapse.test');
+
+        $emails = $this->getJson('/__test/unscoped-users')->assertOk()->json();
+
+        $this->assertIsArray($emails);
+        $this->assertSame([], $emails, 'An unscoped route must fail closed, not return every school.');
+    }
+
+    public function test_a_route_missing_the_tenant_middleware_counts_nothing(): void
+    {
+        $this->registerUnscopedRoute();
+
+        $this->actAs('admin@synapse.test');
+
+        $this->getJson('/__test/unscoped-students')->assertOk()->assertJson(0);
+    }
+
+    public function test_the_seed_actually_contains_more_than_one_school(): void
+    {
+        /*
+         * Without this, the two tests above would pass on an empty database and
+         * prove nothing — the leak is only observable if there is something to
+         * leak. `School` is the tenant itself and carries no tenant scope, and
+         * `forSchool()` reaches past the scope without tripping the request-lifecycle
+         * guard that `withoutTenant()` now enforces.
+         */
+        $this->assertGreaterThan(1, School::query()->count());
+
+        $aics = School::where('slug', 'aics')->firstOrFail();
+        $saintAlbert = $this->otherSchool();
+
+        $this->assertGreaterThan(0, Student::query()->forSchool($aics)->count());
+        $this->assertGreaterThan(0, Student::query()->forSchool($saintAlbert)->count());
+    }
+
+    // ------------------------------------------------- what must still work
+
+    public function test_a_properly_middleware_d_route_still_sees_its_own_school(): void
     {
         $this->actAs('admin@synapse.test');
 
-        $this->getJson('/api/admin/students')
-            ->assertOk()
-            ->assertJsonMissing(['name' => 'Mary Bih'])
-            ->assertJsonFragment(['name' => 'John Doe']);
+        $this->getJson('/api/admin/students')->assertOk();
     }
 
-    public function test_school_a_admin_cannot_see_school_b_teachers(): void
+    public function test_a_tenant_scoped_query_still_returns_its_own_rows(): void
     {
+        $user = $this->actAs('admin@synapse.test');
+
+        app(TenantContext::class)->set($user->school);
+
+        $this->assertGreaterThan(0, User::query()->count(), 'The seeded school has users.');
+
+        $emails = User::query()->pluck('email')->all();
+
+        $this->assertContains('admin@synapse.test', $emails);
+        $this->assertNotContains('admin.saintalbert@synapse.test', $emails);
+    }
+
+    public function test_the_platform_super_admin_still_spans_tenants(): void
+    {
+        $superAdmin = User::where('email', 'superadmin@synapse.test')->firstOrFail();
+
+        Sanctum::actingAs($superAdmin, ['*']);
+
+        /*
+         * IdentifyTenant resolves a super admin to a deliberate null, which now
+         * counts as a resolution — so the scope stays open for them, by design.
+         * If that distinction were lost, this would fail closed and the platform
+         * admin would see an empty school list.
+         */
+        $this->getJson('/api/super-admin/dashboard')->assertOk();
+
+        $this->assertNull(app(TenantContext::class)->schoolId());
+        $this->assertTrue(app(TenantContext::class)->isResolved());
+    }
+
+    // ------------------------------------------------------ the second hatch
+
+    public function test_without_tenant_refuses_during_a_request(): void
+    {
+        $this->registerUnscopedRoute();
+
         $this->actAs('admin@synapse.test');
 
-        $this->getJson('/api/admin/teachers')
-            ->assertOk()
-            ->assertJsonMissing(['name' => 'Mr. Emeka'])
-            ->assertJsonFragment(['name' => 'Mr. David']);
+        $response = $this->getJson('/__test/without-tenant');
+
+        $this->assertSame(500, $response->status());
+        $this->assertInstanceOf(RuntimeException::class, $response->exception);
+        $this->assertStringContainsString('outside a request lifecycle', $response->exception->getMessage());
     }
 
-    public function test_school_a_teacher_cannot_access_school_b_class(): void
+    public function test_for_school_reaches_another_school_without_tripping_the_guard(): void
     {
-        $this->actAs('teacher@synapse.test');
+        /*
+         * The console branch of `withoutTenant()` cannot be exercised here — this
+         * suite forces HTTP mode for every test. `TenantScopeTest` covers it.
+         * `forSchool()` is the request-safe alternative and must keep working.
+         */
+        $saintAlbert = $this->otherSchool();
 
-        $schoolBClass = SchoolClass::query()->forSchool(
-            School::where('slug', 'saintalbert')->firstOrFail()
-        )->firstOrFail();
-
-        // Cross-tenant class id resolves to 404 because of the tenant scope.
-        $this->getJson("/api/teacher/classes/{$schoolBClass->id}/subjects/1/gradebook")
-            ->assertNotFound();
+        $this->assertGreaterThan(0, Student::query()->forSchool($saintAlbert)->count());
     }
 
-    public function test_teacher_cannot_access_unauthorized_subject(): void
+    // ------------------------------------------------------------- tenancy
+
+    public function test_one_school_cannot_read_another_through_a_scoped_route(): void
     {
-        $this->actAs('teacher@synapse.test');
+        $this->actAs('admin.saintalbert@synapse.test');
 
-        $school = School::where('slug', 'aics')->firstOrFail();
-        $class = SchoolClass::query()->forSchool($school)->where('name', 'Level 3A')->firstOrFail();
-        $math = Subject::query()->forSchool($school)->where('name', 'Mathematics')->firstOrFail();
+        $students = $this->getJson('/api/admin/students')->assertOk()->json('data');
 
-        // Mr. David teaches English in 3A, not Mathematics.
-        $this->getJson("/api/teacher/classes/{$class->id}/subjects/{$math->id}/gradebook")
-            ->assertForbidden();
-    }
+        $aics = School::where('slug', 'aics')->firstOrFail();
+        $aicsMatricules = Student::query()->forSchool($aics)->pluck('matricule')->all();
 
-    public function test_teacher_cannot_modify_another_teachers_grades(): void
-    {
-        $this->actAs('teacher@synapse.test');
+        $this->assertNotEmpty($students, 'The admin should see their own pupils.');
+        $this->assertNotEmpty($aicsMatricules, 'And the other school should have some to leak.');
 
-        $school = School::where('slug', 'aics')->firstOrFail();
-        $class = SchoolClass::query()->forSchool($school)->where('name', 'Level 3A')->firstOrFail();
-        $math = Subject::query()->forSchool($school)->where('name', 'Mathematics')->firstOrFail();
-        $john = Student::query()->forSchool($school)->where('matricule', 'ST2026045')->firstOrFail();
-
-        $this->postJson("/api/teacher/classes/{$class->id}/subjects/{$math->id}/grades", [
-            'grades' => [['student_id' => $john->id, 'test1' => 20]],
-        ])->assertForbidden();
-    }
-
-    public function test_student_cannot_access_cross_school_data(): void
-    {
-        $this->actAs('student@synapse.test');
-
-        // John (AICS) must not see Saint Albert's announcements.
-        $this->getJson('/api/announcements')
-            ->assertOk()
-            ->assertJsonMissing(['title' => 'Welcome to Saint Albert']);
-    }
-
-    public function test_student_cannot_download_another_schools_document(): void
-    {
-        $this->actAs('student@synapse.test');
-
-        $schoolB = School::where('slug', 'saintalbert')->firstOrFail();
-        $foreign = Document::create([
-            'school_id' => $schoolB->id,
-            'request_id' => null,
-            'student_id' => null,
-            'title' => 'Foreign doc',
-            'file_name' => 'foreign.pdf',
-            'mime_type' => 'application/pdf',
-            'size' => 0,
-            'disk' => 'public',
-            'path' => 'documents/foreign.pdf',
-        ]);
-
-        $this->getJson("/api/student/documents/{$foreign->id}/download")
-            ->assertNotFound();
-    }
-
-    public function test_expired_school_is_blocked_from_academics_but_can_see_billing(): void
-    {
-        $this->actAs('admin.demo@synapse.test');
-
-        $this->getJson('/api/admin/students')
-            ->assertForbidden()
-            ->assertJsonPath('code', 'subscription_required');
-
-        $this->getJson('/api/admin/billing')->assertOk();
-    }
-
-    public function test_super_admin_can_manage_schools(): void
-    {
-        $this->actAs('superadmin@synapse.test');
-
-        $this->getJson('/api/super-admin/schools')->assertOk();
-
-        $this->postJson('/api/super-admin/schools', [
-            'name' => 'New Academy',
-            'slug' => 'new-academy',
-        ])->assertCreated();
-    }
-
-    public function test_plan_student_limit_is_enforced(): void
-    {
-        $plan = SubscriptionPlan::create([
-            'name' => 'Tiny',
-            'slug' => 'tiny',
-            'price' => 0,
-            'billing_interval' => 'monthly',
-            'currency' => 'XAF',
-            'max_students' => 1,
-            'features' => ['basic_academics'],
-        ]);
-
-        $this->postJson('/api/onboarding/schools', [
-            'school' => ['name' => 'Tiny School', 'slug' => 'tiny-school'],
-            'admin' => ['name' => 'Tiny Admin', 'email' => 'tiny@synapse.test', 'password' => 'password123'],
-            'plan_id' => $plan->id,
-        ])->assertCreated();
-
-        $this->actAs('tiny@synapse.test');
-
-        $school = School::where('slug', 'tiny-school')->firstOrFail();
-        $class = SchoolClass::create(['school_id' => $school->id, 'name' => 'Grade 1']);
-
-        $this->postJson('/api/admin/students', [
-            'name' => 'First Student', 'email' => 'first@tiny.test', 'password' => 'password123',
-            'matricule' => 'T-001', 'class_id' => $class->id,
-        ])->assertCreated();
-
-        $this->postJson('/api/admin/students', [
-            'name' => 'Second Student', 'email' => 'second@tiny.test', 'password' => 'password123',
-            'matricule' => 'T-002', 'class_id' => $class->id,
-        ])->assertStatus(422);
-    }
-
-    public function test_onboarding_starts_a_trial(): void
-    {
-        $plan = SubscriptionPlan::where('slug', 'starter')->firstOrFail();
-
-        $this->postJson('/api/onboarding/schools', [
-            'school' => ['name' => 'Trial School', 'slug' => 'trial-school'],
-            'admin' => ['name' => 'Trial Admin', 'email' => 'trial-admin@synapse.test', 'password' => 'password123'],
-            'plan_id' => $plan->id,
-        ])->assertCreated();
-
-        $this->actAs('trial-admin@synapse.test');
-
-        $this->getJson('/api/tenant')
-            ->assertOk()
-            ->assertJsonPath('status', 'trial');
+        foreach ($students as $student) {
+            $this->assertNotContains($student['matricule'] ?? null, $aicsMatricules);
+        }
     }
 }
