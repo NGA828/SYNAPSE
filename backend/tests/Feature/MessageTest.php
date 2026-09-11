@@ -59,9 +59,14 @@ class MessageTest extends TestCase
         return User::where('email', 'admin@synapse.test')->firstOrFail();
     }
 
+    private function superAdmin(): User
+    {
+        return User::where('email', 'superadmin@synapse.test')->firstOrFail();
+    }
+
     // ---------------------------------------------------------------- contacts
 
-    public function test_a_student_may_only_contact_staff(): void
+    public function test_a_student_may_contact_classmates_and_teachers_for_their_class(): void
     {
         $this->actAs('student@synapse.test');
 
@@ -69,20 +74,19 @@ class MessageTest extends TestCase
 
         $response->assertOk();
 
-        $roles = collect($response->json('data'))->pluck('role')->unique()->all();
+        $ids = collect($response->json('data'))->pluck('id')->all();
 
-        $this->assertNotEmpty($roles);
-        $this->assertEquals([], array_diff($roles, [User::ROLE_TEACHER, User::ROLE_ADMIN]));
+        $this->assertContains($this->mary()->id, $ids);
+        $this->assertContains($this->david()->id, $ids);
+        $this->assertNotContains($this->chen()->id, $ids);
     }
 
-    public function test_a_student_is_not_offered_other_students(): void
+    public function test_a_student_cannot_open_a_thread_with_an_admin(): void
     {
         $this->actAs('student@synapse.test');
 
-        $ids = collect($this->getJson('/api/messages/recipients')->json('data'))->pluck('id')->all();
-
-        $this->assertNotContains($this->mary()->id, $ids);
-        $this->assertNotContains($this->john()->id, $ids, 'A user should not be offered themselves.');
+        $this->postJson('/api/messages', ['user_id' => $this->chen()->id])
+            ->assertStatus(403);
     }
 
     public function test_the_recipient_list_excludes_the_platform_super_admin(): void
@@ -116,6 +120,26 @@ class MessageTest extends TestCase
         $this->assertContains($this->john()->id, $ids);
     }
 
+    public function test_a_teacher_may_contact_a_school_admin_but_not_an_unrelated_teacher(): void
+    {
+        $this->actAs('teacher@synapse.test');
+
+        $ids = collect($this->getJson('/api/messages/recipients')->json('data'))->pluck('id')->all();
+
+        $this->assertContains($this->chen()->id, $ids);
+        $this->assertNotContains(User::where('email', 'sarah@synapse.test')->value('id'), $ids);
+    }
+
+    public function test_an_admin_may_contact_school_teachers_and_the_super_admin(): void
+    {
+        $this->actAs('admin@synapse.test');
+
+        $ids = collect($this->getJson('/api/messages/recipients')->json('data'))->pluck('id')->all();
+
+        $this->assertContains($this->david()->id, $ids);
+        $this->assertContains($this->superAdmin()->id, $ids);
+        $this->assertNotContains($this->john()->id, $ids);
+    }
     // -------------------------------------------------------------- threads
 
     public function test_a_student_can_open_a_thread_with_a_teacher(): void
@@ -154,6 +178,14 @@ class MessageTest extends TestCase
             ->assertStatus(403);
 
         $this->assertSame(0, Conversation::count());
+    }
+
+    public function test_an_admin_can_open_a_thread_with_the_super_admin(): void
+    {
+        $this->actAs('admin@synapse.test');
+
+        $this->postJson('/api/messages', ['user_id' => $this->superAdmin()->id])
+            ->assertCreated();
     }
 
     public function test_a_user_cannot_open_a_thread_with_themselves(): void

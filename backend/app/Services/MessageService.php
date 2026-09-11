@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\AcademicYear;
 use App\Models\Conversation;
+use App\Models\Enrollment;
 use App\Models\Message;
+use App\Models\TeachingAssignment;
 use App\Models\User;
 use App\Notifications\MessageReceivedNotification;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -11,14 +14,10 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Direct messages between members of one school.
+ * Direct messages between users who share an explicitly permitted relationship.
  *
- * Who may message whom is a deliberate policy, not an accident of the schema.
- * A student may write to a teacher or an administrator — that covers "I have a
- * question about my homework" — but not to another student. A school platform
- * should not quietly provide an unsupervised student-to-student channel, and
- * the one rule below is easier for staff to reason about than a matrix of
- * allowed pairs.
+ * The recipient policy is deliberately enforced here, rather than only in the
+ * recipient picker, so a crafted request cannot bypass the UI.
  */
 class MessageService
 {
@@ -56,11 +55,22 @@ class MessageService
      */
     public function conversationWith(User $user, int $otherUserId): Conversation
     {
-        $other = User::query()->findOrFail($otherUserId);
+        $otherQuery = User::query();
+
+        if ($user->isAdmin()) {
+            $otherQuery->withoutGlobalScope(\App\Models\Scopes\TenantScope::class);
+        }
+
+        $other = $otherQuery->findOrFail($otherUserId);
 
         abort_if($other->id === $user->id, 422, 'You cannot start a conversation with yourself.');
 
-        abort_unless($other->school_id === $user->school_id, 403, 'That person is not at your school.');
+        abort_unless(
+            $other->school_id === $user->school_id
+                || ($user->isAdmin() && $other->isSuperAdmin()),
+            403,
+            'That person is not available to you.',
+        );
 
         $this->assertMayMessage($user, $other);
 
@@ -149,20 +159,21 @@ class MessageService
     /**
      * People this user may start a conversation with.
      *
-     * Students see staff only; staff see the whole school. Super admins are
-     * never listed: they belong to the platform, not to the school.
-     *
      * @return Collection<int, User>
      */
     public function recipientsFor(User $user, ?string $search = null, int $limit = 25): Collection
     {
-        $query = User::query()
-            ->where('school_id', $user->school_id)
-            ->where('id', '!=', $user->id)
-            ->where('role', '!=', User::ROLE_SUPER_ADMIN);
+        $allowedIds = $this->allowedRecipientIds($user);
 
-        if ($user->role === User::ROLE_STUDENT) {
-            $query->whereIn('role', [User::ROLE_TEACHER, User::ROLE_ADMIN]);
+        $query = User::query()->whereIn('id', $allowedIds);
+
+        // Super admins have no school tenant, so their records are hidden by
+        // the tenant scope during an admin request. The policy explicitly
+        // allows an admin to contact them.
+        if ($user->isAdmin()) {
+            $query = User::query()
+                ->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                ->whereIn('id', $allowedIds);
         }
 
         if ($search) {
@@ -186,13 +197,139 @@ class MessageService
 
     private function assertMayMessage(User $user, User $other): void
     {
-        if ($user->role === User::ROLE_STUDENT) {
-            abort_unless(
-                in_array($other->role, [User::ROLE_TEACHER, User::ROLE_ADMIN], true),
-                403,
-                'Students can message teachers and administrators only.',
-            );
+        abort_unless(
+            $this->canMessage($user, $other),
+            403,
+            'You are not allowed to message this person.',
+        );
+    }
+
+    private function canMessage(User $user, User $other): bool
+    {
+        return $this->allowedRecipientIds($user)->contains((int) $other->id);
+    }
+
+    /**
+     * Build the recipient ids for the current academic year.
+     *
+     * Students may contact classmates and teachers assigned to their class.
+     * Teachers may contact their students, teachers sharing one of their
+     * subjects, and school administrators. Administrators may contact school
+     * teachers and platform super administrators.
+     *
+     * @return Collection<int, int>
+     */
+    private function allowedRecipientIds(User $user): Collection
+    {
+        $year = AcademicYear::current();
+
+        if (! $year) {
+            return collect();
         }
+
+        if ($user->isAdmin()) {
+            $teacherIds = User::query()
+                ->where('school_id', $user->school_id)
+                ->where('role', User::ROLE_TEACHER)
+                ->pluck('id');
+
+            $superAdminIds = User::query()
+                ->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                ->where('role', User::ROLE_SUPER_ADMIN)
+                ->pluck('id');
+
+            return $teacherIds
+                ->merge($superAdminIds)
+                ->reject(fn (int $id): bool => $id === (int) $user->id)
+                ->unique()
+                ->values();
+        }
+
+        if ($user->isStudent()) {
+            $studentId = $user->student?->id;
+
+            if (! $studentId) {
+                return collect();
+            }
+
+            $classIds = Enrollment::query()
+                ->where('student_id', $studentId)
+                ->where('academic_year_id', $year->id)
+                ->pluck('class_id');
+
+            if ($classIds->isEmpty()) {
+                return collect();
+            }
+
+            $teacherIds = TeachingAssignment::query()
+                ->whereIn('class_id', $classIds)
+                ->where('academic_year_id', $year->id)
+                ->join('teachers', 'teachers.id', '=', 'teaching_assignments.teacher_id')
+                ->pluck('teachers.user_id');
+
+            $classmateIds = User::query()
+                ->where('role', User::ROLE_STUDENT)
+                ->whereHas('student.enrollments', function ($query) use ($classIds, $year): void {
+                    $query->whereIn('class_id', $classIds)
+                        ->where('academic_year_id', $year->id);
+                })
+                ->pluck('id');
+
+            return $teacherIds
+                ->merge($classmateIds)
+                ->reject(fn (int $id): bool => $id === (int) $user->id)
+                ->unique()
+                ->values();
+        }
+
+        if ($user->isTeacher()) {
+            $teacher = $user->teacher;
+
+            if (! $teacher) {
+                return collect();
+            }
+
+            $assignments = TeachingAssignment::query()
+                ->where('teacher_id', $teacher->id)
+                ->where('academic_year_id', $year->id)
+                ->get(['class_id', 'subject_id']);
+
+            if ($assignments->isEmpty()) {
+                return collect();
+            }
+
+            $classIds = $assignments->pluck('class_id');
+            $subjectIds = $assignments->pluck('subject_id');
+
+            $studentIds = User::query()
+                ->where('role', User::ROLE_STUDENT)
+                ->whereHas('student.enrollments', function ($query) use ($classIds, $year): void {
+                    $query->whereIn('class_id', $classIds)
+                        ->where('academic_year_id', $year->id);
+                })
+                ->pluck('id');
+
+            $sharedSubjectTeacherIds = TeachingAssignment::query()
+                ->whereIn('subject_id', $subjectIds)
+                ->where('academic_year_id', $year->id)
+                ->join('teachers', 'teachers.id', '=', 'teaching_assignments.teacher_id')
+                ->where('teachers.id', '!=', $teacher->id)
+                ->pluck('teachers.user_id');
+
+            $adminIds = User::query()
+                ->where('school_id', $user->school_id)
+                ->where('role', User::ROLE_ADMIN)
+                ->pluck('id');
+
+            return $studentIds
+                ->merge($sharedSubjectTeacherIds)
+                ->merge($adminIds)
+                ->reject(fn (int $id): bool => $id === (int) $user->id)
+                ->unique()
+                ->values();
+        }
+
+        return collect();
     }
 
     private function assertParticipant(User $user, Conversation $conversation): void
@@ -201,6 +338,19 @@ class MessageService
             $conversation->includes($user->id),
             403,
             'You are not part of this conversation.',
+        );
+
+        $otherId = $conversation->otherParticipantId($user->id);
+        $other = $otherId
+            ? User::query()
+                ->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                ->find($otherId)
+            : null;
+
+        abort_unless(
+            $other && ($this->canMessage($user, $other) || $this->canMessage($other, $user)),
+            403,
+            'You are not allowed to use this conversation.',
         );
     }
 }

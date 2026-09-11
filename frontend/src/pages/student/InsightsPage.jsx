@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { ErrorDisplay } from '../../components/forms/ErrorDisplay.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { PageContainer } from '../../components/layout/PageContainer.jsx'
 
 const metric = (Icon, label, value, hint) => (
   <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -30,21 +31,25 @@ export default function InsightsPage() {
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <PageHeader title="My progress" description="How you are tracking this term." />
-        <ErrorDisplay message={error.response?.data?.message ?? 'Your progress could not be loaded.'} />
-      </div>
+      <PageContainer>
+        <div className="space-y-6">
+          <PageHeader title="My progress" description="How you are tracking this term." />
+          <ErrorDisplay message={error.response?.data?.message ?? 'Your progress could not be loaded.'} />
+        </div>
+      </PageContainer>
     )
   }
 
   if (loading || !data?.data) {
     return (
-      <div className="space-y-6">
-        <PageHeader title="My progress" description="How you are tracking this term." />
-        <div className="flex justify-center py-16">
-          <Spinner className="size-8" />
+      <PageContainer>
+        <div className="space-y-6">
+          <PageHeader title="My progress" description="How you are tracking this term." />
+          <div className="flex justify-center py-16">
+            <Spinner className="size-8" />
+          </div>
         </div>
-      </div>
+      </PageContainer>
     )
   }
 
@@ -57,57 +62,59 @@ export default function InsightsPage() {
       : `${insights.quizzes.percentage}%`
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="My progress"
-        description={
-          insights.student?.class?.name
-            ? `${insights.student.name} · ${insights.student.class.name}`
-            : 'How you are tracking this term.'
-        }
-      >
-        {insights.severity === 'critical' ? (
-          <Badge variant="danger" dot>
-            Needs attention
-          </Badge>
-        ) : insights.severity === 'warning' ? (
-          <Badge variant="warning" dot>
-            Worth a look
-          </Badge>
-        ) : (
-          <Badge variant="success" dot>
-            On track
-          </Badge>
-        )}
-      </PageHeader>
+    <PageContainer>
+      <div className="space-y-6">
+        <PageHeader
+          title="My progress"
+          description={
+            insights.student?.class?.name
+              ? `${insights.student.name} · ${insights.student.class.name}`
+              : 'How you are tracking this term.'
+          }
+        >
+          {insights.severity === 'critical' ? (
+            <Badge variant="danger" dot>
+              Needs attention
+            </Badge>
+          ) : insights.severity === 'warning' ? (
+            <Badge variant="warning" dot>
+              Worth a look
+            </Badge>
+          ) : (
+            <Badge variant="success" dot>
+              On track
+            </Badge>
+          )}
+        </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {metric(TrendingUp, 'Average', insights.average === null ? '—' : insights.average, 'Out of 20')}
-        {metric(CalendarCheck2, 'Attendance', attendanceText, 'Present or late')}
-        {metric(
-          ClipboardCheck,
-          'Homework',
-          insights.homework ? `${insights.homework.submitted}/${insights.homework.published}` : '—',
-          insights.homework?.missing ? `${insights.homework.missing} past due` : 'All in',
-        )}
-        {metric(
-          HelpCircle,
-          'Quizzes',
-          quizText,
-          `${insights.quizzes?.attempts ?? 0} attempt(s)`,
-        )}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {metric(TrendingUp, 'Average', insights.average === null ? '—' : insights.average, 'Out of 20')}
+          {metric(CalendarCheck2, 'Attendance', attendanceText, 'Present or late')}
+          {metric(
+            ClipboardCheck,
+            'Homework',
+            insights.homework ? `${insights.homework.submitted}/${insights.homework.published}` : '—',
+            insights.homework?.missing ? `${insights.homework.missing} past due` : 'All in',
+          )}
+          {metric(
+            HelpCircle,
+            'Quizzes',
+            quizText,
+            `${insights.quizzes?.attempts ?? 0} attempt(s)`,
+          )}
+        </div>
+
+        <Card>
+          <CardHeader
+            title="What to look at"
+            description="Raised by the same thresholds your teachers see, so there are no surprises."
+            action={<ShieldAlert className="size-5 text-slate-400" aria-hidden="true" />}
+          />
+          <CardBody>
+            <SignalList signals={insights.signals} />
+          </CardBody>
+        </Card>
       </div>
-
-      <Card>
-        <CardHeader
-          title="What to look at"
-          description="Raised by the same thresholds your teachers see, so there are no surprises."
-          action={<ShieldAlert className="size-5 text-slate-400" aria-hidden="true" />}
-        />
-        <CardBody>
-          <SignalList signals={insights.signals} />
-        </CardBody>
-      </Card>
-    </div>
+    </PageContainer>
   )
 }

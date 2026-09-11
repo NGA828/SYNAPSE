@@ -4339,6 +4339,67 @@ const otherParticipantId = (conversation, userId) =>
     ? conversation.participant_b_id
     : conversation.participant_a_id
 
+const mockAllowedRecipientIds = (user, schoolId) => {
+  const year = currentYearFor(schoolId)
+  if (!year) return []
+
+  if (user.role === 'admin') {
+    return db.users
+      .filter((candidate) => candidate.school_id === schoolId && candidate.role === 'teacher')
+      .map((candidate) => candidate.id)
+      .concat(db.users.filter((candidate) => candidate.role === 'super_admin').map((candidate) => candidate.id))
+  }
+
+  if (user.role === 'student') {
+    const student = studentForUser(user.id, schoolId)
+    const classIds = db.enrollments
+      .filter((entry) => entry.student_id === student?.id && entry.academic_year_id === year.id)
+      .map((entry) => entry.class_id)
+
+    const teacherIds = db.teachingAssignments
+      .filter((assignment) => classIds.includes(assignment.class_id) && assignment.academic_year_id === year.id)
+      .map((assignment) => byId(db.teachers, assignment.teacher_id)?.user_id)
+
+    const classmateIds = db.enrollments
+      .filter((entry) => classIds.includes(entry.class_id) && entry.academic_year_id === year.id)
+      .map((entry) => byId(db.students, entry.student_id)?.user_id)
+
+    return teacherIds.concat(classmateIds).filter((id) => id != null)
+  }
+
+  if (user.role === 'teacher') {
+    const teacher = teacherForUser(user.id, schoolId)
+    const assignments = db.teachingAssignments.filter(
+      (assignment) => assignment.teacher_id === teacher?.id && assignment.academic_year_id === year.id,
+    )
+    const classIds = assignments.map((assignment) => assignment.class_id)
+    const subjectIds = assignments.map((assignment) => assignment.subject_id)
+
+    const studentIds = db.enrollments
+      .filter((entry) => classIds.includes(entry.class_id) && entry.academic_year_id === year.id)
+      .map((entry) => byId(db.students, entry.student_id)?.user_id)
+    const sharedSubjectTeacherIds = db.teachingAssignments
+      .filter((assignment) =>
+        subjectIds.includes(assignment.subject_id)
+        && assignment.academic_year_id === year.id
+        && assignment.teacher_id !== teacher?.id,
+      )
+      .map((assignment) => byId(db.teachers, assignment.teacher_id)?.user_id)
+    const adminIds = db.users
+      .filter((candidate) => candidate.school_id === schoolId && candidate.role === 'admin')
+      .map((candidate) => candidate.id)
+
+    return studentIds.concat(sharedSubjectTeacherIds, adminIds).filter((id) => id != null)
+  }
+
+  return []
+}
+
+const mockCanMessage = (user, other, schoolId) =>
+  other.school_id === schoolId || (user.role === 'admin' && other.role === 'super_admin')
+    ? mockAllowedRecipientIds(user, schoolId).includes(Number(other.id))
+    : false
+
 function messageIndex(config) {
   const { user } = requireTenant(config)
   const rows = db.conversations
@@ -4361,12 +4422,10 @@ function messageStore(config) {
       user_id: ['You cannot start a conversation with yourself.'],
     })
   }
-  if (other.school_id !== school.id) throw fail(403, 'That person is not at your school.')
-
-  // The safeguarding rule: students reach staff, not each other.
-  if (user.role === 'student' && !['teacher', 'admin'].includes(other.role)) {
-    throw fail(403, 'Students can message teachers and administrators only.')
+  if (other.school_id !== school.id && !(user.role === 'admin' && other.role === 'super_admin')) {
+    throw fail(403, 'That person is not available to you.')
   }
+  if (!mockCanMessage(user, other, school.id)) throw fail(403, 'You are not allowed to message this person.')
 
   const [a, b] = orderedPair(user.id, other.id)
   const existing = db.conversations.find(
@@ -4388,9 +4447,13 @@ function messageStore(config) {
 
 function messageShow(config, match) {
   const id = match[1]
-  const { user } = requireTenant(config)
+  const { user, school } = requireTenant(config)
   const conversation = findConversation(config, id)
   if (!isParticipant(conversation, user.id)) throw fail(403, 'You are not part of this conversation.')
+  const other = byId(db.users, otherParticipantId(conversation, user.id))
+  if (!other || (!mockCanMessage(user, other, school.id) && !mockCanMessage(other, user, school.id))) {
+    throw fail(403, 'You are not allowed to use this conversation.')
+  }
 
   // Opening a thread is the read receipt.
   db.messages.forEach((message) => {
@@ -4413,6 +4476,10 @@ function messageSend(config, match) {
   const { user, school } = requireTenant(config)
   const conversation = findConversation(config, id)
   if (!isParticipant(conversation, user.id)) throw fail(403, 'You are not part of this conversation.')
+  const other = byId(db.users, otherParticipantId(conversation, user.id))
+  if (!other || (!mockCanMessage(user, other, school.id) && !mockCanMessage(other, user, school.id))) {
+    throw fail(403, 'You are not allowed to use this conversation.')
+  }
 
   const body = readBody(config)
   const text = String(body.body ?? '').trim()
@@ -4453,9 +4520,13 @@ function messageSend(config, match) {
 
 function messageRead(config, match) {
   const id = match[1]
-  const { user } = requireTenant(config)
+  const { user, school } = requireTenant(config)
   const conversation = findConversation(config, id)
   if (!isParticipant(conversation, user.id)) throw fail(403, 'You are not part of this conversation.')
+  const other = byId(db.users, otherParticipantId(conversation, user.id))
+  if (!other || (!mockCanMessage(user, other, school.id) && !mockCanMessage(other, user, school.id))) {
+    throw fail(403, 'You are not allowed to use this conversation.')
+  }
 
   let marked = 0
   db.messages.forEach((message) => {
@@ -4488,10 +4559,8 @@ function messageRecipients(config) {
   const { user, school } = requireTenant(config)
   const term = String(config.params?.search ?? '').trim().toLowerCase()
   const rows = db.users
-    .filter((candidate) => candidate.school_id === school.id
-      && Number(candidate.id) !== Number(user.id)
-      && candidate.role !== 'super_admin'
-      && (user.role !== 'student' || ['teacher', 'admin'].includes(candidate.role))
+    .filter((candidate) => Number(candidate.id) !== Number(user.id)
+      && mockCanMessage(user, candidate, school.id)
       && (!term || candidate.name.toLowerCase().includes(term)))
     .sort((a, b) => a.name.localeCompare(b.name))
     .slice(0, 25)
