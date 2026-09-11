@@ -95,8 +95,10 @@ export default function ImportPage() {
     const anchor = document.createElement('a')
     anchor.href = url
     anchor.download = `${type}-template.csv`
+    document.body.appendChild(anchor)
     anchor.click()
-    URL.revokeObjectURL(url)
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const handlePreview = async () => {
