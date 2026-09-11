@@ -77,11 +77,17 @@ class StudentTutor
      */
     private function complete(string $message, array $history): string
     {
-        $response = Http::withToken((string) config('ai.key'))
+        $request = Http::withToken((string) config('ai.key'))
             ->timeout((int) config('ai.timeout', 15))
             ->connectTimeout((int) config('ai.connection_timeout', 5))
-            ->acceptJson()
-            ->post(config('ai.base_url').'/chat/completions', [
+            ->acceptJson();
+
+        $caInfo = config('ai.cainfo');
+        if (is_string($caInfo) && $caInfo !== '') {
+            $request = $request->withOptions(['verify' => $caInfo]);
+        }
+
+        $response = $request->post(config('ai.base_url').'/chat/completions', [
                 'model' => config('ai.model'),
                 'temperature' => (float) config('ai.tutor.temperature', 0.4),
                 'max_tokens' => (int) config('ai.tutor.max_tokens', 900),

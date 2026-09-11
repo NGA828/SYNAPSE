@@ -37,6 +37,23 @@ return [
     'base_url' => rtrim((string) env('AI_BASE_URL', 'https://api.openai.com/v1'), '/'),
 
     /*
+    | Optional CA bundle for PHP installations that do not ship one (common
+    | with Windows PHP). Leaving this unset preserves PHP/cURL's normal
+    | certificate verification behavior.
+    */
+    'cainfo' => (function () {
+        $configured = env('AI_CAINFO');
+
+        if (! is_string($configured) || trim($configured) === '') {
+            $configured = storage_path('app/cacert.pem');
+        } elseif (! preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/])/', $configured)) {
+            $configured = base_path($configured);
+        }
+
+        return is_file($configured) ? $configured : null;
+    })(),
+
+    /*
     | Seconds. Kept short: a report card that takes a minute to render is worse
     | than one with a slightly plainer comment.
     */
