@@ -84,4 +84,67 @@ return [
         'short_length' => 240,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Student AI study assistant
+    |--------------------------------------------------------------------------
+    |
+    | A general study tutor for the student portal: it explains concepts,
+    | coaches revision and answers schoolwork questions. It is deliberately
+    | *general* — it never receives school records, because a chat that can
+    | discuss one pupil's marks is a data-leak surface as well as a fairness
+    | problem. Every turn costs provider tokens, so the conversation is
+    | stateless (the client sends recent turns) and both a per-minute and a
+    | per-student daily ceiling apply.
+    |
+    | Groq's free tier speaks the OpenAI chat-completions dialect, so it works
+    | through the same `http` driver as the writers above:
+    |
+    |   AI_BASE_URL=https://api.groq.com/openai/v1
+    |   AI_MODEL=llama-3.3-70b-versatile
+    |
+    */
+
+    'tutor' => [
+
+        /*
+        | Conversation turns remembered from the client, oldest last. The cap
+        | bounds both the request size and how much transcript one turn can
+        | carry; the client keeps full history for display.
+        */
+        'max_history' => (int) env('AI_TUTOR_MAX_HISTORY', 12),
+
+        /*
+        | Characters accepted for one student message or one history turn.
+        | 2000 is roughly a page of text — far past what a chat question needs.
+        */
+        'max_message_chars' => (int) env('AI_TUTOR_MAX_MESSAGE_CHARS', 2000),
+
+        /*
+        | Soft target given to the model and the hard ceiling enforced on its
+        | output. A chat bubble longer than ~350 words is a document, not help.
+        */
+        'max_reply_words' => (int) env('AI_TUTOR_MAX_REPLY_WORDS', 350),
+
+        /*
+        | Provider-side completion budget. Generous next to the word ceiling:
+        | tokens overrun words for punctuated, accented or list-heavy text, and
+        | truncation by the provider is not an error we want to handle.
+        */
+        'max_tokens' => (int) env('AI_TUTOR_MAX_TOKENS', 900),
+
+        'temperature' => (float) env('AI_TUTOR_TEMPERATURE', 0.4),
+
+        /*
+        | Rate limits per student. The per-minute ceiling is a named limiter
+        | (`assistant`) registered in AppServiceProvider and applied as route
+        | middleware; the daily one is a counter in the controller that resets
+        | at the end of the local day, so a free provider tier cannot be
+        | exhausted in a burst or ground down over the day.
+        */
+        'per_minute' => (int) env('AI_TUTOR_PER_MINUTE', 6),
+
+        'per_day' => (int) env('AI_TUTOR_PER_DAY', 60),
+    ],
+
 ];

@@ -4,6 +4,7 @@ import { cn } from '../../utils/cn.js'
 import { Sidebar } from './Sidebar.jsx'
 import { TopBar } from './TopBar.jsx'
 import { SubscriptionBanner } from '../tenant/SubscriptionBanner.jsx'
+import { AssistantWidget } from '../student/AssistantWidget.jsx'
 
 export function PageContainer({ children }) {
   const { role } = useAuth()
@@ -36,6 +37,9 @@ export function PageContainer({ children }) {
           {children}
         </main>
       </div>
+
+      {/* The floating study assistant travels with the student role. */}
+      <AssistantWidget />
     </div>
   )
 }

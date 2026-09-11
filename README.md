@@ -827,6 +827,61 @@ spans tenants, by design, and `forSchool()` still bypasses the scope on purpose.
 What changed is that the *accidental* path now returns nothing instead of
 everything.
 
+## Student AI Study Assistant
+
+A general study tutor on the student portal: it explains lessons, coaches revision
+and practises subjects with the student, in English or French. It runs through the
+same OpenAI-compatible `http` driver as the other AI features, so **Groq's free
+tier works with no new SDK** — the OpenAI dialect at `https://api.groq.com/openai/v1`
+with a model such as `llama-3.3-70b-versatile`.
+
+### What it is, and deliberately is not
+
+- **It is general.** The tutor never receives school records — no name, class,
+  mark, timetable or school identifier is attached to any request, so there is
+  nothing about any pupil to leak. Its system prompt says what it does not know,
+  so it cannot imply otherwise.
+- **It guides; it does not do graded work.** Asked to produce a finished piece,
+  it helps the student understand it instead.
+- **It stores nothing.** The conversation is stateless: the client replays its
+  recent turns with every request and owns the transcript. Closing the chat *is*
+  deleting it. One route, no table, no migration.
+
+| Endpoint | Rate limit | Purpose |
+|----------|------------|---------|
+| `POST /student/assistant/chat` | `throttle:assistant` per minute **and** a per-student daily counter | One conversational turn |
+
+### Configuration and ceilings
+
+Everything hangs off the existing `ai.*` config, so the assistant is enabled by
+exactly the same three conditions as the writers: `AI_ENABLED`, `AI_DRIVER=http`,
+`AI_API_KEY`, `AI_MODEL` — with `AI_BASE_URL=https://api.groq.com/openai/v1` for
+Groq. With no key configured the endpoint answers `503` with a friendly message;
+it never pretends to be a tutor.
+
+- `ai.tutor.per_minute` (6) — a named limiter (`assistant`) in `AppServiceProvider`
+  bounds bursts in front of the free provider tier.
+- `ai.tutor.per_day` (60) — a per-student counter checked before the provider is
+  called, counted against the end of the local day so "come back tomorrow" means
+  midnight, not this hour plus twenty-four.
+- `ai.tutor.max_history` (12) — the server-side cap on the replayed transcript;
+  an over-long client window is trimmed from the front.
+- `ai.tutor.max_reply_words` (350) — enforced locally on the output, not merely
+  requested of the model, like every other generated text in the platform.
+
+### Degrades, never fails
+
+A provider outage or empty completion reads to the student as "try again in a
+moment" — a `503` with plain wording, with the reason logged. Both ceilings
+surface as `429` with messages that suggest asking a teacher in the meantime.
+
+### Not verified here
+
+The live provider path has no reachable endpoint from this sandbox. It is
+exercised only through `Http::fake()` in `StudentAssistantTest`, which covers the
+role gate, validation, transcript capping, both rate ceilings, absence of pupil
+identity in the request body, and the 503/429 degradations.
+
 ## Phase Roadmap
 
 - ✅ **Phase 1** — Foundation, strict modular architecture, auth, role redirects
@@ -897,3 +952,9 @@ everything.
     HTTP request now matches nothing instead of every school's rows, and `withoutTenant()`
     refuses to run inside a request lifecycle.
 - ✅ **Phase 8 complete**
+- ✅ **Phase 9 — Student AI study assistant** — a general, bilingual study tutor on the
+  student portal (full page + floating widget on every student page), powered through the
+  same OpenAI-compatible driver with Groq's free tier as the reference provider. It receives
+  no school records, stores nothing, and is bounded per minute and per day so a free tier
+  cannot be exhausted. Unconfigured or down, it says so instead of failing.
+

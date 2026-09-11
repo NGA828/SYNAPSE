@@ -107,5 +107,15 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('password', function (Request $request) {
             return Limit::perMinutes(15, 5)->by($request->input('email') . '|' . $request->ip());
         });
+
+        /*
+        | Student AI study assistant. Burst protection in front of the free
+        | provider tier; the per-student daily ceiling lives in the controller
+        | so it can count only turns that were actually answered.
+        */
+        RateLimiter::for('assistant', function (Request $request) {
+            return Limit::perMinute((int) config('ai.tutor.per_minute', 6))
+                ->by($request->user()?->id ?: $request->ip());
+        });
     }
 }
