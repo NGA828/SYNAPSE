@@ -17,6 +17,14 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
+        // Tenant-owned implicit route bindings must be resolved after the
+        // authenticated user's school has been placed in TenantContext.
+        $middleware->priority([
+            \Illuminate\Auth\Middleware\Authenticate::class,
+            \App\Http\Middleware\IdentifyTenant::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+        ]);
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRoleIs::class,
             'tenant' => \App\Http\Middleware\IdentifyTenant::class,
