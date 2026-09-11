@@ -5474,6 +5474,95 @@ function studentInsightsRoute(config) {
   return studentInsights(config)
 }
 
+/*
+ * Study assistant — mirrors AssistantController: student-only, stateless,
+ * `{data: {reply, remaining}}`, and the same per-student daily ceiling so a
+ * demo cannot silently pretend quota is infinite. The tutor itself is a
+ * keyword responder, not a model — enough to walk through the UI.
+ */
+const assistantQuota = { day: null, counts: new Map() }
+const ASSISTANT_DAILY_LIMIT = 60
+
+const assistantReplies = [
+  {
+    test: /(photosynth|plant|chlorophyll)/i,
+    reply:
+      'Photosynthesis is how a plant makes its own food.\n\n' +
+      '1. The leaf takes in carbon dioxide from the air through tiny pores.\n' +
+      '2. The roots draw up water.\n' +
+      '3. Chlorophyll — the green pigment — captures sunlight and uses its energy to turn the water and carbon dioxide into glucose.\n' +
+      '4. Oxygen is released as a by-product.\n\n' +
+      'Quick check: which gas goes IN and which comes OUT? If you can answer that, you have the idea.',
+  },
+  {
+    test: /(study plan|timetable|revise|revision|exam)/i,
+    reply:
+      'Here is a simple one-week revision plan:\n\n' +
+      '1. List every subject and rank each one: weak, okay, strong.\n' +
+      '2. Give your weakest subjects the first 30 minutes of each study day, while your mind is fresh.\n' +
+      '3. Study in blocks of 25–30 minutes with 5-minute breaks.\n' +
+      '4. Each evening, close the book and write down, from memory, three things you learned.\n' +
+      '5. The day before the test: review your notes and past exercises only — no new material.\n\n' +
+      'Which subject is the test in? I can help you break that one down further.',
+  },
+  {
+    test: /(maths?|mathematics|algebra|fraction|equation|geometry)/i,
+    reply:
+      'Maths becomes friendly when you do it in small steps.\n\n' +
+      '1. Write what the question gives you and what it asks for.\n' +
+      '2. Choose the rule that links them.\n' +
+      '3. Work one line at a time, and check each line against the one before.\n\n' +
+      'Tell me one topic — fractions, equations, geometry — and one question you found hard, and we will work through it together.',
+  },
+  {
+    test: /(french|français|grammaire|verbe|conjugaison|"a"|à)/i,
+    reply:
+      'Pour « à » et « a » :\n\n' +
+      '1. « a » est le verbe avoir — on peut le remplacer par « avait ». Exemple : « Il a un stylo » → « Il avait un stylo ».\n' +
+      '2. « à » est une préposition — on ne peut pas le remplacer par « avait ». Exemple : « Il va à l’école ».\n\n' +
+      'Astuce : si « avait » fonctionne, écrivez « a ». Sinon, écrivez « à ».',
+  },
+  {
+    test: /(hello|hi|bonjour|salut|good (morning|afternoon|evening))/i,
+    reply:
+      'Hello! Ready to study?\n\nI can explain a lesson, work through practice questions with you, or help you plan your revision. Which subject is on your mind today?',
+  },
+]
+
+function studentAssistantChat(config) {
+  requireRole(config, 'student')
+
+  const body = readBody(config)
+  const message = String(body?.message ?? '').trim()
+
+  if (!message) {
+    throw fail(422, 'The message could not be validated.', { message: ['The message field is required.'] })
+  }
+
+  const today = new Date().toDateString()
+  if (assistantQuota.day !== today) {
+    assistantQuota.day = today
+    assistantQuota.counts.clear()
+  }
+
+  const used = (assistantQuota.counts.get(authUser(config).id) ?? 0) + 1
+  if (used > ASSISTANT_DAILY_LIMIT) {
+    throw fail(429, 'You have used up your study help for today. Come back tomorrow — or ask your teacher in the meantime.')
+  }
+  assistantQuota.counts.set(authUser(config).id, used)
+
+  const matched = assistantReplies.find((entry) => entry.test.test(message))
+
+  return ok(config, {
+    data: {
+      reply:
+        matched?.reply ??
+        'Good question. In this demo I only know a few topics — photosynthesis, maths, revision planning and French grammar — but the real assistant, once a Groq API key is configured on the backend, answers any schoolwork question in English or French.',
+      remaining: Math.max(0, ASSISTANT_DAILY_LIMIT - used),
+    },
+  })
+}
+
 const ROUTES = [
   ['post', /^\/login$/, login],
   ['post', /^\/logout$/, logout],
@@ -5651,6 +5740,7 @@ const ROUTES = [
   ['get', /^\/teacher\/analytics\/at-risk$/, teacherAnalyticsRegister],
   ['get', /^\/teacher\/analytics\/students\/(\d+)$/, teacherAnalyticsStudent],
   ['get', /^\/student\/insights$/, studentInsightsRoute],
+  ['post', /^\/student\/assistant\/chat$/, studentAssistantChat],
   ['get', /^\/admin\/events$/, adminEventIndex],
   ['post', /^\/admin\/events$/, adminEventStore],
   ['get', /^\/admin\/events\/(\d+)$/, adminEventShow],

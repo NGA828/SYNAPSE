@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\PublicSchoolController;
 use App\Http\Controllers\Api\Student\AcademicController as StudentAcademicController;
+use App\Http\Controllers\Api\Student\AssistantController as StudentAssistantController;
 use App\Http\Controllers\Api\Student\AttendanceController as StudentAttendanceController;
 use App\Http\Controllers\Api\Student\DocumentController as StudentDocumentController;
 use App\Http\Controllers\Api\Student\HomeworkController as StudentHomeworkController;
@@ -203,6 +204,15 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:student', 'password.rotated',
     // it, and only for an attempt that student has already submitted.
     Route::get('/student/insights', [StudentInsightController::class, 'mine'])
         ->name('api.student.insights');
+
+    /*
+    | AI study assistant. Stateless: the client replays its recent turns. The
+    | named `assistant` limiter (AppServiceProvider) caps bursts per minute;
+    | the controller adds a per-student daily ceiling before calling out.
+    */
+    Route::post('/student/assistant/chat', [StudentAssistantController::class, 'store'])
+        ->middleware('throttle:assistant')
+        ->name('api.student.assistant.chat');
 
     Route::get('/student/quizzes', [StudentQuizController::class, 'index'])
         ->name('api.student.quizzes');

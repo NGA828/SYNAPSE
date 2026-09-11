@@ -11,6 +11,7 @@ import AdminAuditLogPage from '../pages/admin/AuditLogPage.jsx'
 import SchoolLoginPage from '../pages/school/SchoolLoginPage.jsx'
 import OnboardingPage from '../pages/onboarding/OnboardingPage.jsx'
 import StudentDashboardPage from '../pages/student/DashboardPage.jsx'
+import StudentAssistantPage from '../pages/student/AssistantPage.jsx'
 import StudentGradesPage from '../pages/student/GradesPage.jsx'
 import StudentReportCardPage from '../pages/student/ReportCardPage.jsx'
 import StudentTimetablePage from '../pages/student/TimetablePage.jsx'
@@ -127,6 +128,7 @@ export default function AppRoutes() {
       />
 
       <Route path="/student" element={studentRoute(<StudentDashboardPage />)} />
+      <Route path="/student/assistant" element={studentRoute(<StudentAssistantPage />)} />
       <Route path="/student/grades" element={studentRoute(<StudentGradesPage />)} />
       <Route path="/student/report-card" element={studentRoute(<StudentReportCardPage />)} />
       <Route path="/student/timetable" element={studentRoute(<StudentTimetablePage />)} />

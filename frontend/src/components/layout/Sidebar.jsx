@@ -22,6 +22,7 @@ import {
   MessageSquare,
   School,
   Settings,
+  Sparkles,
   Upload,
   Users,
 } from 'lucide-react'
@@ -37,6 +38,7 @@ function useNavForRole(role) {
 
   const student = [
     { label: 'Dashboard', icon: LayoutDashboard, to: '/student', end: true },
+    { label: 'AI Assistant', icon: Sparkles, to: '/student/assistant' },
     { label: 'My Grades', icon: BookOpen, to: '/student/grades' },
     ...(hasReportCards ? [{ label: 'Report Card', icon: Award, to: '/student/report-card' }] : []),
     { label: 'Timetable', icon: CalendarDays, to: '/student/timetable' },
