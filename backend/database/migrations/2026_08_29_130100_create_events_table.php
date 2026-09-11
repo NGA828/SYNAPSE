@@ -18,8 +18,8 @@ return new class extends Migration
     {
         Schema::create('events', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained('users')->nullOnDelete();
+            $table->unsignedBigInteger('school_id');
+            $table->unsignedBigInteger('user_id')->nullable();
 
             $table->string('title');
             $table->text('description')->nullable();
@@ -46,6 +46,9 @@ return new class extends Migration
 
             $table->index(['school_id', 'starts_at']);
             $table->index(['school_id', 'is_published', 'audience']);
+
+            $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
+            $table->foreign('user_id')->references('id')->on('users')->nullOnDelete();
         });
     }
 

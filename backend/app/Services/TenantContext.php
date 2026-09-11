@@ -88,7 +88,7 @@ class TenantContext
         return app(self::class)->schoolId();
     }
 
-    public static function isResolved(): bool
+ public static function checkIsResolved(): bool
     {
         return app(self::class)->isResolved();
     }

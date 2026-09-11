@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { EmptyState } from '../../components/dashboard/EmptyState.jsx'
 import { ErrorDisplay } from '../../components/forms/ErrorDisplay.jsx'
+import { PageContainer } from '../../components/layout/PageContainer.jsx'
 
 /**
  * Teacher analytics.
@@ -22,21 +23,25 @@ export default function InsightsPage() {
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <PageHeader title="My analytics" description="How your classes are tracking." />
-        <ErrorDisplay message={error.response?.data?.message ?? 'Analytics could not be loaded.'} />
-      </div>
+      <PageContainer>
+        <div className="space-y-6">
+          <PageHeader title="My analytics" description="How your classes are tracking." />
+          <ErrorDisplay message={error.response?.data?.message ?? 'Analytics could not be loaded.'} />
+        </div>
+      </PageContainer>
     )
   }
 
   if (loading || !data?.data) {
     return (
-      <div className="space-y-6">
-        <PageHeader title="My analytics" description="How your classes are tracking." />
-        <div className="flex justify-center py-16">
-          <Spinner className="size-8" />
+      <PageContainer>
+        <div className="space-y-6">
+          <PageHeader title="My analytics" description="How your classes are tracking." />
+          <div className="flex justify-center py-16">
+            <Spinner className="size-8" />
+          </div>
         </div>
-      </div>
+      </PageContainer>
     )
   }
 
@@ -49,6 +54,7 @@ export default function InsightsPage() {
   ]
 
   return (
+    <PageContainer>
     <div className="space-y-6">
       <PageHeader
         title="My analytics"
@@ -164,5 +170,6 @@ export default function InsightsPage() {
         </>
       )}
     </div>
+    </PageContainer>
   )
 }

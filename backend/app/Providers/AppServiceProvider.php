@@ -89,7 +89,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Model::preventSilentlyDiscardingAttributes(! $this->app->isProduction());
+        \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
+
+        Model::preventSilentlyDiscardingAttributes(!$this->app->isProduction());
 
         if ($this->app->isProduction()) {
             URL::forceScheme('https');
@@ -97,13 +99,13 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('login', function (Request $request) {
             return [
-                Limit::perMinute(5)->by($request->input('email').'|'.$request->ip()),
+                Limit::perMinute(5)->by($request->input('email') . '|' . $request->ip()),
                 Limit::perMinute(20)->by($request->ip()),
             ];
         });
 
         RateLimiter::for('password', function (Request $request) {
-            return Limit::perMinutes(15, 5)->by($request->input('email').'|'.$request->ip());
+            return Limit::perMinutes(15, 5)->by($request->input('email') . '|' . $request->ip());
         });
     }
 }

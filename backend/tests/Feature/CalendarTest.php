@@ -42,12 +42,12 @@ class CalendarTest extends TestCase
         return $user;
     }
 
-    private function from(): string
+    private function dateFrom(): string
     {
         return now()->subDays(10)->toDateString();
     }
 
-    private function to(): string
+    private function dateTo(): string
     {
         return now()->addDays(20)->toDateString();
     }
@@ -59,7 +59,7 @@ class CalendarTest extends TestCase
     {
         $this->actAs($email);
 
-        return $this->getJson('/api/calendar?from='.$this->from().'&to='.$this->to())->json('data');
+        return $this->getJson('/api/calendar?from='.$this->dateFrom().'&to='.$this->dateTo())->json('data');
     }
 
     // ----------------------------------------------------------------- shape
@@ -312,11 +312,11 @@ class CalendarTest extends TestCase
     {
         $this->actAs('student@synapse.test');
 
-        $response = $this->getJson('/api/calendar?from='.$this->from().'&to='.$this->to());
+        $response = $this->getJson('/api/calendar?from='.$this->dateFrom().'&to='.$this->dateTo());
 
         $response->assertOk();
-        $this->assertSame($this->from(), $response->json('from'));
-        $this->assertSame($this->to(), $response->json('to'));
+        $this->assertSame($this->dateFrom(), $response->json('from'));
+        $this->assertSame($this->dateTo(), $response->json('to'));
     }
 
     public function test_omitting_a_range_defaults_to_the_current_week(): void

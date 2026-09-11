@@ -17,14 +17,17 @@ class AuthService
      */
     public function login(string $email, string $password, ?string $device = null): array
     {
-        if (! Auth::attempt(['email' => $email, 'password' => $password])) {
+        $user = User::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+            ->where('email', $email)
+            ->first();
+
+        if (! $user || ! \Illuminate\Support\Facades\Hash::check($password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        /** @var User $user */
-        $user = Auth::user();
+        // We already have the $user from the query above.
 
         abort_if(
             $user->school && $user->school->status === 'suspended',

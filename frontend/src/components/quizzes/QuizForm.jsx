@@ -109,7 +109,7 @@ export function QuizForm({ open, onClose, onSaved, quiz }) {
           : 'It stays a draft until you publish it.'
       }
     >
-      <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Select label="Class" name="class_id" value={form.class_id} onChange={set('class_id')} disabled={editing} required>
             <option value="">Select a class…</option>
