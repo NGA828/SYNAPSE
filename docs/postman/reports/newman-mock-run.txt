@@ -1,0 +1,1188 @@
+newman
+
+SYNAPSE API
+
+❏ 00 · Public
+↳ login
+  POST http://127.0.0.1:8099/api/login [200 OK, 400B, 25ms]
+  ✓  Status is 200 OK
+  ✓  Returns a bearer token
+
+↳ password.forgot
+  POST http://127.0.0.1:8099/api/forgot-password [200 OK, 208B, 4ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ password.reset
+  POST http://127.0.0.1:8099/api/reset-password [200 OK, 208B, 4ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ documents.verify
+  GET http://127.0.0.1:8099/api/verify/SYN-2026-8FQ2K1 [200 OK, 362B, 3ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ onboarding.plans
+  GET http://127.0.0.1:8099/api/onboarding/plans [200 OK, 391B, 6ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ onboarding.store
+  POST http://127.0.0.1:8099/api/onboarding/schools [201 Created, 216B, 2ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ school.show
+  GET http://127.0.0.1:8099/api/school/1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+❏ 01 · Auth, Profile & Shared
+↳ logout
+  POST http://127.0.0.1:8099/api/logout [401 Unauthorized, 232B, 2ms]
+  ✓  Rejects the request without a token
+  ✓  Explains why
+
+↳ user
+  GET http://127.0.0.1:8099/api/user [401 Unauthorized, 232B, 3ms]
+  ✓  Rejects the request without a token
+  ✓  Explains why
+
+↳ tenant
+  GET http://127.0.0.1:8099/api/tenant [200 OK, 309B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ password.change
+  POST http://127.0.0.1:8099/api/password [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ profile
+  GET http://127.0.0.1:8099/api/profile [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ profile.update
+  PATCH http://127.0.0.1:8099/api/profile [200 OK, 209B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ profile.sign-out-others
+  POST http://127.0.0.1:8099/api/profile/sign-out-others [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ notifications
+  GET http://127.0.0.1:8099/api/notifications?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ notifications.read-all
+  POST http://127.0.0.1:8099/api/notifications/read-all [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ notifications.read
+  POST http://127.0.0.1:8099/api/notifications/{{notification_id}}/read [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ announcements
+  GET http://127.0.0.1:8099/api/announcements?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ messages
+  GET http://127.0.0.1:8099/api/messages?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ messages.store
+  POST http://127.0.0.1:8099/api/messages [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ messages.recipients
+  GET http://127.0.0.1:8099/api/messages/recipients [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ messages.unread
+  GET http://127.0.0.1:8099/api/messages/unread [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ messages.show
+  GET http://127.0.0.1:8099/api/messages/{{conversation_id}} [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ messages.send
+  POST http://127.0.0.1:8099/api/messages/{{conversation_id}} [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ messages.read
+  POST http://127.0.0.1:8099/api/messages/{{conversation_id}}/read [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ calendar
+  GET http://127.0.0.1:8099/api/calendar?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ calendar.today
+  GET http://127.0.0.1:8099/api/calendar/today [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ events
+  GET http://127.0.0.1:8099/api/events?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ events.show
+  GET http://127.0.0.1:8099/api/events/1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ attachments.download
+  GET http://127.0.0.1:8099/api/attachments/{{attachment_id}}/download [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+❏ 02 · Student
+↳ student.dashboard
+  GET http://127.0.0.1:8099/api/student/dashboard [200 OK, 960B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.grades
+  GET http://127.0.0.1:8099/api/student/grades [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.report-card
+  GET http://127.0.0.1:8099/api/student/report-card [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.timetable
+  GET http://127.0.0.1:8099/api/student/timetable [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.requests.types
+  GET http://127.0.0.1:8099/api/student/requests/types [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.requests
+  GET http://127.0.0.1:8099/api/student/requests?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ student.requests.store
+  POST http://127.0.0.1:8099/api/student/requests [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.documents
+  GET http://127.0.0.1:8099/api/student/documents?per_page=15&page=1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ student.documents.download
+  GET http://127.0.0.1:8099/api/student/documents/{{document_id}}/download [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.attendance
+  GET http://127.0.0.1:8099/api/student/attendance?per_page=15&page=1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ student.transcript
+  GET http://127.0.0.1:8099/api/student/transcript [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.report-card.pdf
+  GET http://127.0.0.1:8099/api/student/report-card/pdf [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.transcript.pdf
+  GET http://127.0.0.1:8099/api/student/transcript/pdf [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.exams
+  GET http://127.0.0.1:8099/api/student/exams [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.homework
+  GET http://127.0.0.1:8099/api/student/homework?per_page=15&page=1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ student.homework.submit
+  POST http://127.0.0.1:8099/api/student/homework/{{homework_assignment_id}}/submit [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.materials
+  GET http://127.0.0.1:8099/api/student/materials?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ student.materials.show
+  GET http://127.0.0.1:8099/api/student/materials/{{lesson_id}} [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.insights
+  GET http://127.0.0.1:8099/api/student/insights [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.assistant.chat
+  POST http://127.0.0.1:8099/api/student/assistant/chat [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.quizzes
+  GET http://127.0.0.1:8099/api/student/quizzes?per_page=15&page=1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ student.quizzes.paper
+  GET http://127.0.0.1:8099/api/student/quizzes/{{quiz_id}}/paper [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.quizzes.submit
+  POST http://127.0.0.1:8099/api/student/quizzes/{{quiz_id}}/submit [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ student.quizzes.review
+  GET http://127.0.0.1:8099/api/student/quiz-attempts/{{quiz_attempt_id}}/review [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+❏ 03 · Teacher
+↳ teacher.dashboard
+  GET http://127.0.0.1:8099/api/teacher/dashboard?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.assignments
+  GET http://127.0.0.1:8099/api/teacher/assignments?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.timetable
+  GET http://127.0.0.1:8099/api/teacher/timetable?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.class.students
+  GET http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/subjects/1/students?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.class.gradebook
+  GET http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/subjects/1/gradebook?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.class.grades.store
+  POST http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/subjects/1/grades [200 OK, 208B, 3ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.class.attendance
+  GET http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/attendance?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.class.attendance.store
+  POST http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/attendance [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.exams
+  GET http://127.0.0.1:8099/api/teacher/exams?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.exams.ranking
+  GET http://127.0.0.1:8099/api/teacher/exams/ranking [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework
+  GET http://127.0.0.1:8099/api/teacher/homework?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.homework.store
+  POST http://127.0.0.1:8099/api/teacher/homework [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework.show
+  GET http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}} [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework.update
+  PUT http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}} [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework.destroy
+  DELETE http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}} [200 OK, 214B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework.publish
+  POST http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/publish [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework.unpublish
+  POST http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/unpublish [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework.submissions
+  GET http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/submissions [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework-submissions.show
+  GET http://127.0.0.1:8099/api/teacher/homework-submissions/{{homework_submission_id}} [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.homework-submissions.grade
+  POST http://127.0.0.1:8099/api/teacher/homework-submissions/{{homework_submission_id}}/grade [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.materials
+  GET http://127.0.0.1:8099/api/teacher/materials?per_page=15&page=1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.materials.store
+  POST http://127.0.0.1:8099/api/teacher/materials [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.materials.show
+  GET http://127.0.0.1:8099/api/teacher/materials/{{lesson_id}} [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.materials.update
+  PUT http://127.0.0.1:8099/api/teacher/materials/{{lesson_id}} [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.materials.destroy
+  DELETE http://127.0.0.1:8099/api/teacher/materials/{{lesson_id}} [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.materials.publish
+  POST http://127.0.0.1:8099/api/teacher/materials/{{lesson_id}}/publish [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.materials.unpublish
+  POST http://127.0.0.1:8099/api/teacher/materials/{{lesson_id}}/unpublish [200 OK, 208B, 4ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quizzes
+  GET http://127.0.0.1:8099/api/teacher/quizzes?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ teacher.quizzes.store
+  POST http://127.0.0.1:8099/api/teacher/quizzes [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quizzes.show
+  GET http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}} [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quizzes.update
+  PUT http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}} [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quizzes.destroy
+  DELETE http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}} [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quizzes.publish
+  POST http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/publish [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quizzes.unpublish
+  POST http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/unpublish [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quizzes.results
+  GET http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/results [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quiz-attempts.show
+  GET http://127.0.0.1:8099/api/teacher/quiz-attempts/{{quiz_attempt_id}} [200 OK, 362B, 3ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.quiz-attempts.review
+  POST http://127.0.0.1:8099/api/teacher/quiz-attempts/{{quiz_attempt_id}}/review [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.analytics
+  GET http://127.0.0.1:8099/api/teacher/analytics [200 OK, 339B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.analytics.at-risk
+  GET http://127.0.0.1:8099/api/teacher/analytics/at-risk [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.analytics.student
+  GET http://127.0.0.1:8099/api/teacher/analytics/students/1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.report-card-comment
+  GET http://127.0.0.1:8099/api/teacher/students/1/report-card-comment [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.report-card-comment.draft
+  POST http://127.0.0.1:8099/api/teacher/students/1/report-card-comment/draft [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ teacher.report-card-comment.update
+  PUT http://127.0.0.1:8099/api/teacher/students/1/report-card-comment [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+❏ 04 · School Administrator
+↳ admin.dashboard
+  GET http://127.0.0.1:8099/api/admin/dashboard?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.billing
+  GET http://127.0.0.1:8099/api/admin/billing?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.billing.upgrade
+  POST http://127.0.0.1:8099/api/admin/billing/upgrade [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.billing.renew
+  POST http://127.0.0.1:8099/api/admin/billing/renew [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.settings
+  GET http://127.0.0.1:8099/api/admin/settings [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.audit-logs
+  GET http://127.0.0.1:8099/api/admin/audit-logs?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.payments.receipt
+  GET http://127.0.0.1:8099/api/admin/payments/{{payment_id}}/receipt [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.settings.update
+  PATCH http://127.0.0.1:8099/api/admin/settings [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.academic-years.index
+  GET http://127.0.0.1:8099/api/admin/academic-years?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.academic-years.store
+  POST http://127.0.0.1:8099/api/admin/academic-years [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.academic-years.update
+  PUT http://127.0.0.1:8099/api/admin/academic-years/2 [200 OK, 209B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.academic-years.destroy
+  DELETE http://127.0.0.1:8099/api/admin/academic-years/2 [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.academic-years.activate
+  POST http://127.0.0.1:8099/api/admin/academic-years/2/activate [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.semesters.index
+  GET http://127.0.0.1:8099/api/admin/semesters?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.semesters.store
+  POST http://127.0.0.1:8099/api/admin/semesters [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.semesters.destroy
+  DELETE http://127.0.0.1:8099/api/admin/semesters/1 [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.semesters.activate
+  POST http://127.0.0.1:8099/api/admin/semesters/1/activate [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.grade-components.index
+  GET http://127.0.0.1:8099/api/admin/grade-components?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.grade-components.store
+  POST http://127.0.0.1:8099/api/admin/grade-components [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.grade-components.update
+  PUT http://127.0.0.1:8099/api/admin/grade-components/{{component_id}} [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.grade-components.destroy
+  DELETE http://127.0.0.1:8099/api/admin/grade-components/{{component_id}} [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.exams.index
+  GET http://127.0.0.1:8099/api/admin/exams?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.exams.store
+  POST http://127.0.0.1:8099/api/admin/exams [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.exams.destroy
+  DELETE http://127.0.0.1:8099/api/admin/exams/1 [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.exams.ranking
+  GET http://127.0.0.1:8099/api/admin/exams/ranking [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.import.preview
+  POST http://127.0.0.1:8099/api/admin/import/preview [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.import
+  POST http://127.0.0.1:8099/api/admin/import [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.classes.index
+  GET http://127.0.0.1:8099/api/admin/classes?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.classes.store
+  POST http://127.0.0.1:8099/api/admin/classes [201 Created, 216B, 2ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.subjects.index
+  GET http://127.0.0.1:8099/api/admin/subjects?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.subjects.store
+  POST http://127.0.0.1:8099/api/admin/subjects [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.subjects.update
+  PUT http://127.0.0.1:8099/api/admin/subjects/1 [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.subjects.destroy
+  DELETE http://127.0.0.1:8099/api/admin/subjects/1 [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.teachers.index
+  GET http://127.0.0.1:8099/api/admin/teachers?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.teachers.store
+  POST http://127.0.0.1:8099/api/admin/teachers [201 Created, 216B, 2ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.teachers.update
+  PUT http://127.0.0.1:8099/api/admin/teachers/1 [200 OK, 209B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.teachers.destroy
+  DELETE http://127.0.0.1:8099/api/admin/teachers/1 [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.students.index
+  GET http://127.0.0.1:8099/api/admin/students?per_page=15&page=1 [200 OK, 581B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.students.store
+  POST http://127.0.0.1:8099/api/admin/students [201 Created, 426B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.students.update
+  PUT http://127.0.0.1:8099/api/admin/students/1 [200 OK, 209B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.students.destroy
+  DELETE http://127.0.0.1:8099/api/admin/students/1 [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.teaching-assignments.index
+  GET http://127.0.0.1:8099/api/admin/teaching-assignments?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.teaching-assignments.store
+  POST http://127.0.0.1:8099/api/admin/teaching-assignments [201 Created, 216B, 2ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ admin.teaching-assignments.destroy
+  DELETE http://127.0.0.1:8099/api/admin/teaching-assignments/1 [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.timetable
+  GET http://127.0.0.1:8099/api/admin/timetable?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.timetable.store
+  POST http://127.0.0.1:8099/api/admin/timetable/entries [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.timetable.update
+  PUT http://127.0.0.1:8099/api/admin/timetable/entries/{{timetable_entry_id}} [200 OK, 209B, 4ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.timetable.destroy
+  DELETE http://127.0.0.1:8099/api/admin/timetable/entries/{{timetable_entry_id}} [200 OK, 214B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.attendance
+  GET http://127.0.0.1:8099/api/admin/attendance?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.attendance.store
+  POST http://127.0.0.1:8099/api/admin/attendance [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.requests
+  GET http://127.0.0.1:8099/api/admin/requests?per_page=15&page=1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.requests.triage
+  GET http://127.0.0.1:8099/api/admin/requests/triage [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.requests.status
+  POST http://127.0.0.1:8099/api/admin/requests/{{document_request_id}}/status [200 OK, 208B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.requests.generate-document
+  POST http://127.0.0.1:8099/api/admin/requests/{{document_request_id}}/generate-document [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.announcements.store
+  POST http://127.0.0.1:8099/api/admin/announcements [201 Created, 216B, 2ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.announcements.draft
+  POST http://127.0.0.1:8099/api/admin/announcements/draft [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.analytics
+  GET http://127.0.0.1:8099/api/admin/analytics [200 OK, 339B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.analytics.at-risk
+  GET http://127.0.0.1:8099/api/admin/analytics/at-risk [200 OK, 864B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.analytics.student
+  GET http://127.0.0.1:8099/api/admin/analytics/students/1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.events
+  GET http://127.0.0.1:8099/api/admin/events?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ admin.events.store
+  POST http://127.0.0.1:8099/api/admin/events [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.events.show
+  GET http://127.0.0.1:8099/api/admin/events/1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.events.update
+  PUT http://127.0.0.1:8099/api/admin/events/1 [200 OK, 209B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.events.publish
+  POST http://127.0.0.1:8099/api/admin/events/1/publish [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.events.unpublish
+  POST http://127.0.0.1:8099/api/admin/events/1/unpublish [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.events.destroy
+  DELETE http://127.0.0.1:8099/api/admin/events/1 [200 OK, 214B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.students.report-card
+  GET http://127.0.0.1:8099/api/admin/students/1/report-card [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.students.transcript
+  GET http://127.0.0.1:8099/api/admin/students/1/transcript [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.students.documents
+  GET http://127.0.0.1:8099/api/admin/students/1/documents [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ admin.classes.report-cards
+  POST http://127.0.0.1:8099/api/admin/classes/{{school_class_id}}/report-cards [202 Accepted, 221B, 1ms]
+  ✓  Status code is 202
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+❏ 05 · Super Admin (platform)
+↳ super-admin.dashboard
+  GET http://127.0.0.1:8099/api/super-admin/dashboard?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ super-admin.schools.index
+  GET http://127.0.0.1:8099/api/super-admin/schools?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ super-admin.schools.store
+  POST http://127.0.0.1:8099/api/super-admin/schools [201 Created, 216B, 2ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ super-admin.schools.show
+  GET http://127.0.0.1:8099/api/super-admin/schools/1 [200 OK, 362B, 2ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ super-admin.schools.update
+  PUT http://127.0.0.1:8099/api/super-admin/schools/1 [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ super-admin.schools.status
+  POST http://127.0.0.1:8099/api/super-admin/schools/1/status [200 OK, 208B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ super-admin.schools.users
+  GET http://127.0.0.1:8099/api/super-admin/schools/1/users [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ super-admin.plans.index
+  GET http://127.0.0.1:8099/api/super-admin/plans?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ super-admin.plans.store
+  POST http://127.0.0.1:8099/api/super-admin/plans [201 Created, 216B, 1ms]
+  ✓  Status code is 201
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns 201 Created
+  ✓  Echoes the new record with an id
+  ✓  Id is available for the next request
+
+↳ super-admin.plans.update
+  PUT http://127.0.0.1:8099/api/super-admin/plans/1 [200 OK, 209B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ super-admin.subscriptions
+  GET http://127.0.0.1:8099/api/super-admin/subscriptions?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ super-admin.payments
+  GET http://127.0.0.1:8099/api/super-admin/payments?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+↳ super-admin.payments.receipt
+  GET http://127.0.0.1:8099/api/super-admin/payments/{{payment_id}}/receipt [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+↳ super-admin.audit-logs
+  GET http://127.0.0.1:8099/api/super-admin/audit-logs?per_page=15&page=1 [200 OK, 362B, 1ms]
+  ✓  Status code is 200
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+┌─────────────────────────┬─────────────────┬─────────────────┐
+│                         │        executed │          failed │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              iterations │               1 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│                requests │             181 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│            test-scripts │             181 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│      prerequest-scripts │               0 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              assertions │             616 │               0 │
+├─────────────────────────┴─────────────────┴─────────────────┤
+│ total run duration: 2.5s                                    │
+├─────────────────────────────────────────────────────────────┤
+│ total data received: 19.12kB (approx)                       │
+├─────────────────────────────────────────────────────────────┤
+│ average response time: 1ms [min: 1ms, max: 25ms, s.d.: 1ms] │
+└─────────────────────────────────────────────────────────────┘

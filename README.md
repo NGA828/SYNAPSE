@@ -168,6 +168,29 @@ end-to-end. Set it to `false` to talk to the real API — no other code changes 
 
 ---
 
+## API Testing (Postman)
+
+A Postman collection covering all **181 endpoints** lives in [`docs/postman/`](docs/postman/README.md).
+It is generated from `routes/api.php` (bodies from the FormRequest rules, expected
+status codes from the controllers), so it never drifts from the code:
+
+Log in once — the login test script writes the Sanctum token into `{{token}}`, and every
+other request inherits it.
+
+![POST /api/login with its test results](docs/images/postman/03-login-tests-and-results.png)
+
+![POST /api/admin/students returns 201](docs/images/postman/06-admin-create-student-201.png)
+
+![422 validation errors](docs/images/postman/07-validation-error-422.png)
+
+![Newman run of all 181 requests](docs/images/postman/12-newman-cli-run.png)
+
+The full set of 12 screenshots, the import steps, the Newman commands for CI and the
+contract stub for running everything without PHP/MySQL:
+**[docs/postman/README.md](docs/postman/README.md)**.
+
+---
+
 ## SaaS capabilities
 
 - **Super Admin** — platform dashboard (schools, users, subscriptions, MRR), school CRUD
