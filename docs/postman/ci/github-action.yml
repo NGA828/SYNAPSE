@@ -1,0 +1,149 @@
+# Copy this file to .github/workflows/postman-api-tests.yml to enable CI.
+# (It is kept out of .github/ because the automation that maintains this branch
+# is not permitted to create workflow files.)
+#
+name: Postman API tests
+
+# Runs the generated Postman collection two ways:
+#   postman-stub     — the whole collection against docs/postman/mock-server.js
+#                      (no PHP/MySQL needed, so it is cheap and always runs)
+#   postman-laravel  — the collection against a real, seeded Laravel API,
+#                      once per role, because a student token must not be able
+#                      to call the admin routes.
+#
+# The collection is generated from routes/api.php, so the first job also fails
+# if someone changes a route and forgets to regenerate.
+
+on:
+  push:
+    paths:
+      - 'backend/app/**'
+      - 'backend/routes/**'
+      - 'docs/postman/**'
+      - 'tools/generate_postman_collection.py'
+      - '.github/workflows/postman-api-tests.yml'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: postman-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postman-stub:
+    name: Collection vs contract stub
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Newman
+        run: npm install -g newman
+
+      - name: The committed collection matches routes/api.php
+        run: |
+          python3 tools/generate_postman_collection.py
+          git diff --exit-code docs/postman/SYNAPSE-API.postman_collection.json
+
+      - name: Start the contract stub
+        run: |
+          node docs/postman/mock-server.js &
+          curl --retry 20 --retry-delay 1 --retry-all-errors -sf \
+            http://127.0.0.1:8099/api/onboarding/plans
+
+      - name: Run all 181 requests
+        run: |
+          newman run docs/postman/SYNAPSE-API.postman_collection.json \
+                 -e docs/postman/SYNAPSE-Mock.postman_environment.json \
+                 --reporters cli,junit \
+                 --reporter-junit-export build/newman-stub.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: newman-stub-report
+          path: build/newman-stub.xml
+
+  postman-laravel:
+    name: Collection vs live API (${{ matrix.role }})
+    runs-on: ubuntu-latest
+    # Teacher/student/super-admin folders depend on the seeded teaching
+    # assignments and plan limits matching this school's data, so they report
+    # without failing the build. Admin + auth are enforced strictly.
+    continue-on-error: ${{ matrix.role != 'admin' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: admin
+            email: admin@synapse.test
+            folder: "04 · School Administrator"
+          - role: teacher
+            email: teacher@synapse.test
+            folder: "03 · Teacher"
+          - role: student
+            email: student@synapse.test
+            folder: "02 · Student"
+          - role: super_admin
+            email: superadmin@synapse.test
+            folder: "05 · Super Admin (platform)"
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, fileinfo, sqlite3, pdo_sqlite, bcmath
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare the environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          mkdir -p database && touch database/database.sqlite
+          sed -i 's/^DB_CONNECTION=mysql/DB_CONNECTION=sqlite/' .env
+          sed -i "s|^DB_DATABASE=synapse|DB_DATABASE=${GITHUB_WORKSPACE}/backend/database/database.sqlite|" .env
+          php artisan migrate --force --seed --no-interaction
+
+      - name: Serve the API
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8000 &
+          curl --retry 30 --retry-delay 2 --retry-all-errors -sf \
+            http://127.0.0.1:8000/api/onboarding/plans
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Newman
+        run: npm install -g newman
+
+      # "00 · Public" runs first so the login test can capture the token for
+      # the role being exercised.
+      - name: Run the ${{ matrix.role }} folder
+        run: |
+          newman run ../docs/postman/SYNAPSE-API.postman_collection.json \
+                 -e ../docs/postman/SYNAPSE-Local.postman_environment.json \
+                 --folder "00 · Public" \
+                 --folder "${{ matrix.folder }}" \
+                 --env-var email=${{ matrix.email }} \
+                 --env-var password=password123 \
+                 --reporters cli,junit \
+                 --reporter-junit-export ../build/newman-${{ matrix.role }}.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: newman-${{ matrix.role }}-report
+          path: build/newman-${{ matrix.role }}.xml
