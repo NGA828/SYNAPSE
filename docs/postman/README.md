@@ -37,9 +37,13 @@ student's token must return 403 on every request.
 ## 2. Log in — and let the test script capture the token
 
 Open **00 · Public ▸ login**. The body is pre-filled from `LoginRequest`'s
-validation rules (`email`, `password`) and the demo seed credentials.
+validation rules (`email`, `password`) and defaults to the demo seed account.
 
 ![POST /api/login returns 200 and a Sanctum token](../../images/postman/02-login-request-200.png)
+
+The body is driven by `{{email}}` / `{{password}}` collection variables
+(defaults: `admin@synapse.test` / `password123`), so the same collection can be
+run as any role without editing a single request.
 
 The **Tests** tab is where the automation lives. It asserts the response *and*
 chains the token forward, so nothing is ever copy-pasted between requests:
@@ -109,6 +113,20 @@ you are logged in as a super admin.
 
 ![Collection Runner results](../../images/postman/11-collection-runner-results.png)
 
+**One role at a time.** A student token cannot call the admin routes, so the
+collection is meant to be run once per role — the login variables make that a
+flag, not an edit:
+
+```bash
+newman run docs/postman/SYNAPSE-API.postman_collection.json \
+       -e docs/postman/SYNAPSE-Local.postman_environment.json \
+       --folder "00 · Public" --folder "03 · Teacher" \
+       --env-var email=teacher@synapse.test --env-var password=password123
+```
+
+`00 · Public` must be listed first: it is the folder that logs in and captures
+the token the second folder then uses.
+
 **In CI / from a terminal** — same collection, headless:
 
 ```bash
@@ -124,8 +142,26 @@ newman run docs/postman/SYNAPSE-API.postman_collection.json \
        -e docs/postman/SYNAPSE-Mock.postman_environment.json
 ```
 
-The last stub run: **181 requests, 616 assertions, 0 failures**
-([full log](reports/newman-mock-run.txt)).
+`docs/postman/reports/newman-mock-run.txt` holds the last stub run:
+**181 requests, 616 assertions, 0 failures**, plus one run per role
+(admin 77/273, teacher 50/159, student 31/98, super admin 21/74).
+
+### In GitHub Actions
+
+**[`ci/github-action.yml`](ci/github-action.yml)** — copy it to
+`.github/workflows/postman-api-tests.yml` to enable CI (it is not installed
+directly because the automation that maintains this branch may not create
+workflow files). It runs on every push that touches
+`backend/routes`, `backend/app` or the collection, and has two jobs:
+
+| Job | What it does |
+| --- | --- |
+| `postman-stub` | Regenerates the collection and fails if the committed one differs from `routes/api.php`; then runs all 181 requests against the stub |
+| `postman-laravel` | Migrates and seeds a real Laravel API on sqlite, serves it, and runs the folder for each of the four roles with that role's credentials |
+
+The admin run is enforced; teacher, student and super-admin runs report without
+failing the build, because those folders depend on the seeded teaching
+assignments and plan limits of the demo school.
 
 ![Newman run](../../images/postman/12-newman-cli-run.png)
 

@@ -51,7 +51,7 @@
             "description": "`POST /api/login`\n\nController: `AuthController@login`\nRoute name: `api.login`\nMiddleware: \u2014",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@synapse.test\",\n  \"password\": \"password123\"\n}",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11155,6 +11155,14 @@
     {
       "key": "last_created_id",
       "value": ""
+    },
+    {
+      "key": "email",
+      "value": "admin@synapse.test"
+    },
+    {
+      "key": "password",
+      "value": "password123"
     },
     {
       "key": "reset_token",

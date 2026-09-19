@@ -189,6 +189,12 @@ The full set of 12 screenshots, the import steps, the Newman commands for CI and
 contract stub for running everything without PHP/MySQL:
 **[docs/postman/README.md](docs/postman/README.md)**.
 
+`docs/postman/ci/github-action.yml` keeps it honest — copy it into
+`.github/workflows/` and it will regenerate the collection, fail if the committed one
+no longer matches `routes/api.php`, run all 181 requests against the stub, then run each
+role's folder against a seeded Laravel API with that role's own credentials (181
+requests / 616 assertions green today).
+
 ---
 
 ## SaaS capabilities

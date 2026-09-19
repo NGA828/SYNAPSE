@@ -1,33 +1,134 @@
+Newman runs of SYNAPSE-API.postman_collection.json
+target  : docs/postman/mock-server.js (contract stub)
+date    : 2026-09-19T15:39:58Z
+
+==================== ROLE admin — 04 · School Administrator ====================
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+┌─────────────────────────┬─────────────────┬─────────────────┐
+│                         │        executed │          failed │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              iterations │               1 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│                requests │              77 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│            test-scripts │              77 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│      prerequest-scripts │               0 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              assertions │             273 │               0 │
+├─────────────────────────┴─────────────────┴─────────────────┤
+│ total run duration: 1169ms                                  │
+├─────────────────────────────────────────────────────────────┤
+│ total data received: 7.06kB (approx)                        │
+├─────────────────────────────────────────────────────────────┤
+│ average response time: 1ms [min: 1ms, max: 23ms, s.d.: 2ms] │
+└─────────────────────────────────────────────────────────────┘
+
+==================== ROLE teacher — 03 · Teacher ====================
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+┌─────────────────────────┬─────────────────┬─────────────────┐
+│                         │        executed │          failed │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              iterations │               1 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│                requests │              50 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│            test-scripts │              50 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│      prerequest-scripts │               0 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              assertions │             159 │               0 │
+├─────────────────────────┴─────────────────┴─────────────────┤
+│ total run duration: 812ms                                   │
+├─────────────────────────────────────────────────────────────┤
+│ total data received: 4.86kB (approx)                        │
+├─────────────────────────────────────────────────────────────┤
+│ average response time: 1ms [min: 1ms, max: 20ms, s.d.: 2ms] │
+└─────────────────────────────────────────────────────────────┘
+
+==================== ROLE student — 02 · Student ====================
+  ✓  Responds as JSON
+  ✓  Responds in under 800ms
+
+┌─────────────────────────┬─────────────────┬─────────────────┐
+│                         │        executed │          failed │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              iterations │               1 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│                requests │              31 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│            test-scripts │              31 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│      prerequest-scripts │               0 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              assertions │              98 │               0 │
+├─────────────────────────┴─────────────────┴─────────────────┤
+│ total run duration: 526ms                                   │
+├─────────────────────────────────────────────────────────────┤
+│ total data received: 4.85kB (approx)                        │
+├─────────────────────────────────────────────────────────────┤
+│ average response time: 2ms [min: 1ms, max: 20ms, s.d.: 3ms] │
+└─────────────────────────────────────────────────────────────┘
+
+==================== ROLE superadmin — 05 · Super Admin (platform) ====================
+  ✓  Responds in under 800ms
+  ✓  Returns a paginated envelope
+
+┌─────────────────────────┬─────────────────┬─────────────────┐
+│                         │        executed │          failed │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              iterations │               1 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│                requests │              21 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│            test-scripts │              21 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│      prerequest-scripts │               0 │               0 │
+├─────────────────────────┼─────────────────┼─────────────────┤
+│              assertions │              74 │               0 │
+├─────────────────────────┴─────────────────┴─────────────────┤
+│ total run duration: 401ms                                   │
+├─────────────────────────────────────────────────────────────┤
+│ total data received: 2.36kB (approx)                        │
+├─────────────────────────────────────────────────────────────┤
+│ average response time: 2ms [min: 1ms, max: 20ms, s.d.: 4ms] │
+└─────────────────────────────────────────────────────────────┘
+
+==================== FULL COLLECTION (admin credentials) ====================
 newman
 
 SYNAPSE API
 
 ❏ 00 · Public
 ↳ login
-  POST http://127.0.0.1:8099/api/login [200 OK, 400B, 25ms]
+  POST http://127.0.0.1:8099/api/login [200 OK, 400B, 31ms]
   ✓  Status is 200 OK
   ✓  Returns a bearer token
 
 ↳ password.forgot
-  POST http://127.0.0.1:8099/api/forgot-password [200 OK, 208B, 4ms]
+  POST http://127.0.0.1:8099/api/forgot-password [200 OK, 208B, 3ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ password.reset
-  POST http://127.0.0.1:8099/api/reset-password [200 OK, 208B, 4ms]
+  POST http://127.0.0.1:8099/api/reset-password [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ documents.verify
-  GET http://127.0.0.1:8099/api/verify/SYN-2026-8FQ2K1 [200 OK, 362B, 3ms]
+  GET http://127.0.0.1:8099/api/verify/SYN-2026-8FQ2K1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ onboarding.plans
-  GET http://127.0.0.1:8099/api/onboarding/plans [200 OK, 391B, 6ms]
+  GET http://127.0.0.1:8099/api/onboarding/plans [200 OK, 391B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -62,7 +163,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ password.change
-  POST http://127.0.0.1:8099/api/password [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/password [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -80,20 +181,20 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ profile.sign-out-others
-  POST http://127.0.0.1:8099/api/profile/sign-out-others [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/profile/sign-out-others [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ notifications
-  GET http://127.0.0.1:8099/api/notifications?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/notifications?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
   ✓  Returns a paginated envelope
 
 ↳ notifications.read-all
-  POST http://127.0.0.1:8099/api/notifications/read-all [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/notifications/read-all [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -105,14 +206,14 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ announcements
-  GET http://127.0.0.1:8099/api/announcements?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/announcements?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
   ✓  Returns a paginated envelope
 
 ↳ messages
-  GET http://127.0.0.1:8099/api/messages?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/messages?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -137,7 +238,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ messages.show
-  GET http://127.0.0.1:8099/api/messages/{{conversation_id}} [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/messages/{{conversation_id}} [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -162,7 +263,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ calendar.today
-  GET http://127.0.0.1:8099/api/calendar/today [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/calendar/today [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -188,50 +289,50 @@ SYNAPSE API
 
 ❏ 02 · Student
 ↳ student.dashboard
-  GET http://127.0.0.1:8099/api/student/dashboard [200 OK, 960B, 2ms]
+  GET http://127.0.0.1:8099/api/student/dashboard [200 OK, 960B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ student.grades
-  GET http://127.0.0.1:8099/api/student/grades [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/grades [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ student.report-card
-  GET http://127.0.0.1:8099/api/student/report-card [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/report-card [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ student.timetable
-  GET http://127.0.0.1:8099/api/student/timetable [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/timetable [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ student.requests.types
-  GET http://127.0.0.1:8099/api/student/requests/types [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/requests/types [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ student.requests
-  GET http://127.0.0.1:8099/api/student/requests?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/student/requests?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
   ✓  Returns a paginated envelope
 
 ↳ student.requests.store
-  POST http://127.0.0.1:8099/api/student/requests [201 Created, 216B, 1ms]
+  POST http://127.0.0.1:8099/api/student/requests [201 Created, 216B, 2ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ student.documents
-  GET http://127.0.0.1:8099/api/student/documents?per_page=15&page=1 [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/documents?per_page=15&page=1 [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -244,7 +345,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ student.attendance
-  GET http://127.0.0.1:8099/api/student/attendance?per_page=15&page=1 [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/attendance?per_page=15&page=1 [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -257,7 +358,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ student.report-card.pdf
-  GET http://127.0.0.1:8099/api/student/report-card/pdf [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/student/report-card/pdf [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -288,20 +389,20 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ student.materials
-  GET http://127.0.0.1:8099/api/student/materials?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/student/materials?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
   ✓  Returns a paginated envelope
 
 ↳ student.materials.show
-  GET http://127.0.0.1:8099/api/student/materials/{{lesson_id}} [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/student/materials/{{lesson_id}} [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ student.insights
-  GET http://127.0.0.1:8099/api/student/insights [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/insights [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -313,7 +414,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ student.quizzes
-  GET http://127.0.0.1:8099/api/student/quizzes?per_page=15&page=1 [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/student/quizzes?per_page=15&page=1 [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -332,7 +433,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ student.quizzes.review
-  GET http://127.0.0.1:8099/api/student/quiz-attempts/{{quiz_attempt_id}}/review [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/student/quiz-attempts/{{quiz_attempt_id}}/review [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -353,7 +454,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ teacher.timetable
-  GET http://127.0.0.1:8099/api/teacher/timetable?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/teacher/timetable?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -367,14 +468,14 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ teacher.class.gradebook
-  GET http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/subjects/1/gradebook?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/subjects/1/gradebook?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
   ✓  Returns a paginated envelope
 
 ↳ teacher.class.grades.store
-  POST http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/subjects/1/grades [200 OK, 208B, 3ms]
+  POST http://127.0.0.1:8099/api/teacher/classes/{{school_class_id}}/subjects/1/grades [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -431,43 +532,43 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ teacher.homework.destroy
-  DELETE http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}} [200 OK, 214B, 2ms]
+  DELETE http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}} [200 OK, 214B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.homework.publish
-  POST http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/publish [200 OK, 208B, 1ms]
+  POST http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/publish [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.homework.unpublish
-  POST http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/unpublish [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/unpublish [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.homework.submissions
-  GET http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/submissions [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/teacher/homework/{{homework_assignment_id}}/submissions [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.homework-submissions.show
-  GET http://127.0.0.1:8099/api/teacher/homework-submissions/{{homework_submission_id}} [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/teacher/homework-submissions/{{homework_submission_id}} [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.homework-submissions.grade
-  POST http://127.0.0.1:8099/api/teacher/homework-submissions/{{homework_submission_id}}/grade [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/teacher/homework-submissions/{{homework_submission_id}}/grade [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.materials
-  GET http://127.0.0.1:8099/api/teacher/materials?per_page=15&page=1 [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/teacher/materials?per_page=15&page=1 [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -504,7 +605,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ teacher.materials.unpublish
-  POST http://127.0.0.1:8099/api/teacher/materials/{{lesson_id}}/unpublish [200 OK, 208B, 4ms]
+  POST http://127.0.0.1:8099/api/teacher/materials/{{lesson_id}}/unpublish [200 OK, 208B, 3ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -529,7 +630,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ teacher.quizzes.update
-  PUT http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}} [200 OK, 209B, 1ms]
+  PUT http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}} [200 OK, 209B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -541,31 +642,31 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ teacher.quizzes.publish
-  POST http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/publish [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/publish [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.quizzes.unpublish
-  POST http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/unpublish [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/unpublish [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.quizzes.results
-  GET http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/results [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/teacher/quizzes/{{quiz_id}}/results [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.quiz-attempts.show
-  GET http://127.0.0.1:8099/api/teacher/quiz-attempts/{{quiz_attempt_id}} [200 OK, 362B, 3ms]
+  GET http://127.0.0.1:8099/api/teacher/quiz-attempts/{{quiz_attempt_id}} [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.quiz-attempts.review
-  POST http://127.0.0.1:8099/api/teacher/quiz-attempts/{{quiz_attempt_id}}/review [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/teacher/quiz-attempts/{{quiz_attempt_id}}/review [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -589,13 +690,13 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ teacher.report-card-comment
-  GET http://127.0.0.1:8099/api/teacher/students/1/report-card-comment [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/teacher/students/1/report-card-comment [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ teacher.report-card-comment.draft
-  POST http://127.0.0.1:8099/api/teacher/students/1/report-card-comment/draft [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/teacher/students/1/report-card-comment/draft [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -615,14 +716,14 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ admin.billing
-  GET http://127.0.0.1:8099/api/admin/billing?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/admin/billing?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
   ✓  Returns a paginated envelope
 
 ↳ admin.billing.upgrade
-  POST http://127.0.0.1:8099/api/admin/billing/upgrade [200 OK, 208B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/billing/upgrade [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -675,7 +776,7 @@ SYNAPSE API
   ✓  Id is available for the next request
 
 ↳ admin.academic-years.update
-  PUT http://127.0.0.1:8099/api/admin/academic-years/2 [200 OK, 209B, 2ms]
+  PUT http://127.0.0.1:8099/api/admin/academic-years/2 [200 OK, 209B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -687,7 +788,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.academic-years.activate
-  POST http://127.0.0.1:8099/api/admin/academic-years/2/activate [200 OK, 208B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/academic-years/2/activate [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -700,7 +801,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ admin.semesters.store
-  POST http://127.0.0.1:8099/api/admin/semesters [201 Created, 216B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/semesters [201 Created, 216B, 2ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -715,7 +816,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.semesters.activate
-  POST http://127.0.0.1:8099/api/admin/semesters/1/activate [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/admin/semesters/1/activate [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -728,7 +829,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ admin.grade-components.store
-  POST http://127.0.0.1:8099/api/admin/grade-components [201 Created, 216B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/grade-components [201 Created, 216B, 2ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -756,7 +857,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ admin.exams.store
-  POST http://127.0.0.1:8099/api/admin/exams [201 Created, 216B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/exams [201 Created, 216B, 2ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -777,13 +878,13 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.import.preview
-  POST http://127.0.0.1:8099/api/admin/import/preview [200 OK, 208B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/import/preview [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ admin.import
-  POST http://127.0.0.1:8099/api/admin/import [200 OK, 208B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/import [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -805,7 +906,7 @@ SYNAPSE API
   ✓  Id is available for the next request
 
 ↳ admin.subjects.index
-  GET http://127.0.0.1:8099/api/admin/subjects?per_page=15&page=1 [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/admin/subjects?per_page=15&page=1 [200 OK, 362B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -840,7 +941,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ admin.teachers.store
-  POST http://127.0.0.1:8099/api/admin/teachers [201 Created, 216B, 2ms]
+  POST http://127.0.0.1:8099/api/admin/teachers [201 Created, 216B, 1ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -849,7 +950,7 @@ SYNAPSE API
   ✓  Id is available for the next request
 
 ↳ admin.teachers.update
-  PUT http://127.0.0.1:8099/api/admin/teachers/1 [200 OK, 209B, 2ms]
+  PUT http://127.0.0.1:8099/api/admin/teachers/1 [200 OK, 209B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -868,7 +969,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ admin.students.store
-  POST http://127.0.0.1:8099/api/admin/students [201 Created, 426B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/students [201 Created, 426B, 2ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -877,7 +978,7 @@ SYNAPSE API
   ✓  Id is available for the next request
 
 ↳ admin.students.update
-  PUT http://127.0.0.1:8099/api/admin/students/1 [200 OK, 209B, 2ms]
+  PUT http://127.0.0.1:8099/api/admin/students/1 [200 OK, 209B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -924,7 +1025,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.timetable.update
-  PUT http://127.0.0.1:8099/api/admin/timetable/entries/{{timetable_entry_id}} [200 OK, 209B, 4ms]
+  PUT http://127.0.0.1:8099/api/admin/timetable/entries/{{timetable_entry_id}} [200 OK, 209B, 3ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -949,20 +1050,20 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.requests
-  GET http://127.0.0.1:8099/api/admin/requests?per_page=15&page=1 [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/admin/requests?per_page=15&page=1 [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
   ✓  Returns a paginated envelope
 
 ↳ admin.requests.triage
-  GET http://127.0.0.1:8099/api/admin/requests/triage [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/admin/requests/triage [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ admin.requests.status
-  POST http://127.0.0.1:8099/api/admin/requests/{{document_request_id}}/status [200 OK, 208B, 2ms]
+  POST http://127.0.0.1:8099/api/admin/requests/{{document_request_id}}/status [200 OK, 208B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -974,7 +1075,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.announcements.store
-  POST http://127.0.0.1:8099/api/admin/announcements [201 Created, 216B, 2ms]
+  POST http://127.0.0.1:8099/api/admin/announcements [201 Created, 216B, 1ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -1011,7 +1112,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ admin.events.store
-  POST http://127.0.0.1:8099/api/admin/events [201 Created, 216B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/events [201 Created, 216B, 2ms]
   ✓  Status code is 201
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -1023,7 +1124,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.events.update
-  PUT http://127.0.0.1:8099/api/admin/events/1 [200 OK, 209B, 2ms]
+  PUT http://127.0.0.1:8099/api/admin/events/1 [200 OK, 209B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -1035,13 +1136,13 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ admin.events.unpublish
-  POST http://127.0.0.1:8099/api/admin/events/1/unpublish [200 OK, 208B, 1ms]
+  POST http://127.0.0.1:8099/api/admin/events/1/unpublish [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
 
 ↳ admin.events.destroy
-  DELETE http://127.0.0.1:8099/api/admin/events/1 [200 OK, 214B, 2ms]
+  DELETE http://127.0.0.1:8099/api/admin/events/1 [200 OK, 214B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -1095,7 +1196,7 @@ SYNAPSE API
   ✓  Id is available for the next request
 
 ↳ super-admin.schools.show
-  GET http://127.0.0.1:8099/api/super-admin/schools/1 [200 OK, 362B, 2ms]
+  GET http://127.0.0.1:8099/api/super-admin/schools/1 [200 OK, 362B, 1ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -1107,7 +1208,7 @@ SYNAPSE API
   ✓  Responds in under 800ms
 
 ↳ super-admin.schools.status
-  POST http://127.0.0.1:8099/api/super-admin/schools/1/status [200 OK, 208B, 1ms]
+  POST http://127.0.0.1:8099/api/super-admin/schools/1/status [200 OK, 208B, 2ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -1155,7 +1256,7 @@ SYNAPSE API
   ✓  Returns a paginated envelope
 
 ↳ super-admin.payments.receipt
-  GET http://127.0.0.1:8099/api/super-admin/payments/{{payment_id}}/receipt [200 OK, 362B, 1ms]
+  GET http://127.0.0.1:8099/api/super-admin/payments/{{payment_id}}/receipt [200 OK, 362B, 3ms]
   ✓  Status code is 200
   ✓  Responds as JSON
   ✓  Responds in under 800ms
@@ -1184,5 +1285,5 @@ SYNAPSE API
 ├─────────────────────────────────────────────────────────────┤
 │ total data received: 19.12kB (approx)                       │
 ├─────────────────────────────────────────────────────────────┤
-│ average response time: 1ms [min: 1ms, max: 25ms, s.d.: 1ms] │
+│ average response time: 1ms [min: 1ms, max: 31ms, s.d.: 2ms] │
 └─────────────────────────────────────────────────────────────┘

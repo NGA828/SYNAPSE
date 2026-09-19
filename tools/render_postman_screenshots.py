@@ -577,7 +577,7 @@ AT_RISK = {
     "meta": {"current_page": 1, "from": 1, "last_page": 1, "per_page": 15, "to": 1, "total": 1},
 }
 
-LOGIN_BODY = {"email": "admin@synapse.test", "password": "password123"}
+LOGIN_BODY = {"email": "{{email}}", "password": "{{password}}"}
 
 NEW_STUDENT_BODY = {
     "name": "Mary Bih",
@@ -1075,11 +1075,17 @@ def screen_runner(collection: dict) -> UI:
 def screen_newman_cli() -> UI:
     log_path = ROOT / "docs" / "postman" / "reports" / "newman-mock-run.txt"
     log = log_path.read_text().splitlines()
-    lines = log[:33] + [
-        "",
-        "        …  181 requests in total — full log in docs/postman/reports/newman-mock-run.txt",
-        "",
-    ] + log[-23:]
+    # The report holds one summary per role and then the verbose full run; the
+    # screenshot shows the header, the head of the full run and its summary.
+    marker = next((i for i, l in enumerate(log) if l.startswith("==================== FULL")), 0)
+    header, body = log[:4], log[marker:]
+    lines = (
+        header
+        + ["", "        …  per-role runs (admin / teacher / student / super admin) are above in the log", ""]
+        + body[1:26]
+        + ["", "        …  181 requests in total — full log: docs/postman/reports/newman-mock-run.txt", ""]
+        + body[-21:]
+    )
 
     ui = UI()
     ui.rect(0, 0, ui.w, ui.h, fill=(22, 22, 22))

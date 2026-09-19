@@ -560,6 +560,13 @@ def build_request(route: Route, seen: set[str]) -> dict[str, Any]:
         }
 
     if route.name == "api.login":
+        item["request"]["body"] = {
+            "mode": "raw",
+            "raw": json.dumps(
+                {"email": "{{email}}", "password": "{{password}}"}, indent=2
+            ),
+            "options": {"raw": {"language": "json"}},
+        }
         item["event"] = [
             {
                 "listen": "test",
@@ -639,6 +646,8 @@ def build_collection(routes: list[Route]) -> dict[str, Any]:
             {"key": "exam_id", "value": "1"},
             {"key": "event_id", "value": "1"},
             {"key": "last_created_id", "value": ""},
+            {"key": "email", "value": "admin@synapse.test"},
+            {"key": "password", "value": "password123"},
             {"key": "reset_token", "value": ""},
             {"key": "code", "value": "SYN-2026-8FQ2K1"},
             {"key": "id", "value": "1"},

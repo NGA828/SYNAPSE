@@ -30,6 +30,7 @@ const PUBLIC = [/^\/api\/login$/, /^\/api\/forgot-password$/, /^\/api\/reset-pas
   /^\/api\/verify\//, /^\/api\/onboarding\//, /^\/api\/school\//];
 
 const USERS = {
+  'superadmin@synapse.test': { id: 1, name: 'Platform Super Admin', role: 'super_admin', school: null },
   'admin@synapse.test': { id: 12, name: 'Mrs. Chen', role: 'admin', school: SCHOOL },
   'teacher@synapse.test': { id: 14, name: 'Mr. David', role: 'teacher', school: SCHOOL },
   'student@synapse.test': { id: 9, name: 'John Doe', role: 'student', school: SCHOOL },
