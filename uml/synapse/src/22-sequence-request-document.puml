@@ -1,0 +1,112 @@
+@startuml 22-sequence-request-document
+!include _style.iuml
+title Sequence Diagram — UC-03 Request an administrative document
+autonumber "<b>0."
+hide footbox
+
+actor "Student" as student
+actor "School\nAdministrator" as admin
+participant "Browser\n(React SPA)" as spa
+participant "API\n(Laravel)" as api
+participant "RequestService" as rs
+participant "DocumentTypeService" as dts
+participant "DocumentService\n+ PdfRenderer" as ds
+participant "NotificationService" as ns
+database "DBMS" as db
+participant "Mail / SMS\ngateway" as mail <<external>>
+
+student -> spa : "New request": type + reason
+activate spa
+spa -> api : POST /api/student/requests {type, reason}
+activate api
+api -> api : role:student · subscription\n· feature:document_management · validate
+alt invalid type / reason
+  api --> spa : 422 {errors}
+else valid
+  api -> rs : create(student, type, reason)
+  activate rs
+  rs -> db : SELECT max(reference) → next REQ-####
+  rs -> db : INSERT requests (status = submitted)
+  db --> rs : request
+  rs -> ns : notifyRole(admin, RequestSubmittedNotification)
+  activate ns
+  ns -> db : INSERT notifications (bell)
+  ns -> mail : send e-mail (if notify_email)
+  deactivate ns
+  rs --> api : request
+  deactivate rs
+  api --> spa : 201 {request}
+  deactivate api
+  spa --> student : status "Submitted"
+  deactivate spa
+end
+
+== Triage & processing ==
+admin -> spa : open "Document requests"
+activate spa
+spa -> api : GET /api/admin/requests?status=submitted
+activate api
+api -> db : SELECT requests JOIN students/users
+db --> api : rows
+api -> dts : triage(request) for each row
+dts --> api : {canAutoGenerate, needsHuman, reason}
+api --> spa : 200 {requests + triage badges}
+deactivate api
+spa --> admin : list with "auto" / "needs human" badges
+
+alt reject or change status
+  admin -> spa : set status (under_review | approved | rejected) + note
+  spa -> api : PATCH /api/admin/requests/{id} {status, admin_note}
+  activate api
+  api -> rs : transition(request, status, note)
+  activate rs
+  rs -> db : UPDATE requests SET status, admin_note[, resolved_at]
+  rs -> ns : notifyUser(student, RequestStatusChangedNotification)
+  ns -> db : INSERT notifications
+  ns -> mail : e-mail / SMS
+  rs --> api : request
+  deactivate rs
+  api --> spa : 200 {request}
+  deactivate api
+else generate document
+  admin -> spa : click "Generate document"
+  spa -> api : POST /api/admin/requests/{id}/generate-document
+  activate api
+  api -> rs : generateDocument(request, admin)
+  activate rs
+  rs -> ds : generateForRequest(request, issuer)
+  activate ds
+  alt type not supported (recommendation letter, other, unknown)
+    ds --> rs : throw ValidationException(triage reason)
+    rs --> api : 422
+    api --> spa : 422 {message: "needs a human…"}
+    spa --> admin : show reason (handle manually)
+  else supported type
+    ds -> ds : render Blade → dompdf, verification code
+    ds -> db : INSERT documents (request_id, student_id,\nissued_by, path, verification_code)
+    ds --> rs : document
+    deactivate ds
+    rs -> db : UPDATE requests SET status = ready, resolved_at = now()
+    rs -> ns : notifyUser(student, DocumentReadyNotification)
+    ns -> db : INSERT notifications
+    ns -> mail : e-mail / SMS
+    rs --> api : {request, document}
+    deactivate rs
+    api --> spa : 200 {request, document}
+    deactivate api
+    spa --> admin : status "Ready"
+    deactivate spa
+  end
+end
+
+== Student collects the document ==
+student -> spa : open notification → "My documents"
+activate spa
+spa -> api : GET /api/student/documents/{id}/download
+activate api
+api -> db : SELECT documents WHERE id AND student_id = me
+api --> spa : 200 application/pdf (stream)
+deactivate api
+spa --> student : PDF (verifiable at /verify/{code})
+deactivate spa
+@enduml

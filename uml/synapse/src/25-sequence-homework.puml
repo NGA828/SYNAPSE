@@ -1,0 +1,131 @@
+@startuml 25-sequence-homework
+!include _style.iuml
+title Sequence Diagram — UC-06 Publish, submit & grade homework
+autonumber "<b>0."
+hide footbox
+
+actor "Teacher" as teacher
+actor "Student" as student
+participant "Browser\n(React SPA)" as spa
+participant "API\n(Laravel)" as api
+participant "HomeworkService" as hs
+participant "AttachmentService" as as_
+participant "NotificationService" as ns
+database "DBMS" as db
+participant "File storage\n(storage/app)" as fs
+
+== Teacher creates and publishes ==
+teacher -> spa : new assignment (title, instructions, max score, due date, files)
+activate spa
+spa -> api : POST /api/teacher/homework (multipart)
+activate api
+api -> hs : create(teacher, data, files)
+activate hs
+hs -> hs : assertAssigned(teacher, class, subject)
+hs -> db : INSERT homework_assignments (is_published = 0)
+hs -> as_ : storeMany(assignment, files, role = teacher, visibility = class)
+activate as_
+as_ -> fs : put file
+as_ -> db : INSERT attachments (attachable = HomeworkAssignment)
+deactivate as_
+hs --> api : assignment
+deactivate hs
+api --> spa : 201 {assignment}
+deactivate api
+teacher -> spa : click "Publish"
+spa -> api : POST /api/teacher/homework/{id}/publish
+activate api
+api -> hs : publish(teacher, assignment)
+activate hs
+alt teacher does not own the assignment
+  hs --> api : 403
+  api --> spa : 403
+else owner
+  hs -> db : UPDATE homework_assignments SET is_published = 1, published_at = now()
+  hs -> ns : notifyStudents(class, HomeworkPublishedNotification)
+  ns -> db : INSERT notifications (+ mail/SMS per preferences)
+  hs --> api : assignment
+  deactivate hs
+  api --> spa : 200 {assignment}
+  deactivate api
+  spa --> teacher : "Published"
+  deactivate spa
+end
+
+== Student submits ==
+student -> spa : open homework, write answer, attach files, submit
+activate spa
+spa -> api : POST /api/student/homework/{id}/submit (multipart: content, files[])
+activate api
+api -> hs : submit(student, assignment, content, files)
+activate hs
+alt assignment not published
+  hs --> api : 403
+  api --> spa : 403
+else past due_at
+  hs --> api : ValidationException "deadline passed"
+  api --> spa : 422
+else blank content and no files
+  hs --> api : ValidationException "empty submission"
+  api --> spa : 422
+else acceptable
+  hs -> hs : assertEnrolled(student, class, year)
+  hs -> db : BEGIN
+  hs -> db : SELECT homework_submissions WHERE assignment, student (lock)
+  alt existing submission already graded
+    hs -> db : ROLLBACK
+    hs --> api : ValidationException "already graded"
+    api --> spa : 422
+  else existing, not graded
+    hs -> db : UPDATE homework_submissions SET content, attempts = attempts + 1,\nsubmitted_at = now(), is_late = 0
+  else first submission
+    hs -> db : INSERT homework_submissions (attempts = 1, submitted_at = now())
+  end
+  hs -> db : COMMIT
+  hs -> as_ : storeMany(submission, files, role = student, visibility = private)
+  as_ -> fs : put file
+  as_ -> db : INSERT attachments (attachable = HomeworkSubmission)
+  hs --> api : submission (status = submitted)
+  deactivate hs
+  api --> spa : 201 {submission}
+  deactivate api
+  spa --> student : "Submitted" badge
+  deactivate spa
+end
+
+== Teacher grades ==
+teacher -> spa : open "Submissions"
+activate spa
+spa -> api : GET /api/teacher/homework/{id}/submissions
+activate api
+api -> hs : submissionsFor(teacher, assignment)
+hs -> db : SELECT enrolled students LEFT JOIN homework_submissions
+hs --> api : roster with status (not_submitted | submitted | late | graded)
+api --> spa : 200 {submissions}
+deactivate api
+spa --> teacher : list
+teacher -> spa : open a submission, enter score + feedback, "Return"
+spa -> api : POST /api/teacher/homework/{id}/submissions/{sid}/grade {score, feedback}
+activate api
+api -> hs : grade(teacher, submission, score, feedback)
+activate hs
+hs -> hs : assertOwns(assignment)
+alt score < 0 or score > max_score
+  hs --> api : ValidationException
+  api --> spa : 422
+else valid score
+  hs -> db : UPDATE homework_submissions SET score, feedback,\ngraded_by, graded_at = now(), returned_at = now()
+  hs -> ns : notifyUser(student, HomeworkReturnedNotification)
+  ns -> db : INSERT notifications
+  hs --> api : submission (status = graded)
+  deactivate hs
+  api --> spa : 200 {submission}
+  deactivate api
+  spa --> teacher : "Returned to student"
+  deactivate spa
+end
+student -> spa : open homework
+spa -> api : GET /api/student/homework/{id}
+api --> spa : 200 {assignment, submission{score, feedback}}
+spa --> student : score & feedback
+@enduml

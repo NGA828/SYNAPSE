@@ -1,0 +1,120 @@
+@startuml 15-activity-homework
+!pragma layout smetana
+!include _style.iuml
+title Activity Diagram — UC-06 Publish, submit & grade homework
+
+|Teacher|
+start
+:Open "Homework" → "New assignment"
+(title, instructions, max score,
+due date, optional files);
+:Save draft;
+|Browser (React SPA)|
+:POST /api/teacher/homework (multipart);
+|API (Laravel)|
+:HomeworkService::create()
+is_published = false;
+|DBMS|
+:INSERT homework_assignments;
+:INSERT attachments (visibility = class);
+|Teacher|
+:Click "Publish";
+|Browser (React SPA)|
+:POST /api/teacher/homework/{id}/publish;
+|API (Laravel)|
+if (Teacher owns the assignment?) then (no)
+  :HTTP 403;
+  stop
+else (yes)
+endif
+|DBMS|
+:UPDATE homework_assignments
+SET is_published = 1, published_at = now();
+|API (Laravel)|
+:Notify enrolled students
+(HomeworkPublishedNotification);
+
+|Student|
+:Open notification → homework page;
+:Write answer and/or attach files;
+:Submit;
+|Browser (React SPA)|
+:POST /api/student/homework/{id}/submit (multipart);
+|API (Laravel)|
+if (Assignment published?) then (no)
+  :HTTP 403;
+  stop
+else (yes)
+endif
+|API (Laravel)|
+if (Past due_at?) then (yes)
+  :HTTP 422 "Deadline passed";
+  |Browser (React SPA)|
+  :Show closed state;
+  stop
+else (no)
+endif
+|API (Laravel)|
+if (Content blank AND no file?) then (yes)
+  :HTTP 422 "Empty submission";
+  end
+else (no)
+endif
+|API (Laravel)|
+:assertEnrolled(student, class, year);
+:BEGIN TRANSACTION;
+if (Existing submission?) then (yes)
+  if (Already graded?) then (yes)
+    :HTTP 422 "Already graded";
+    stop
+  else (no)
+    |DBMS|
+    :UPDATE homework_submissions
+    SET content, attempts = attempts + 1,
+    submitted_at = now();
+  endif
+else (no)
+  |DBMS|
+  :INSERT homework_submissions
+  (attempts = 1, submitted_at = now());
+endif
+|API (Laravel)|
+:COMMIT; store uploaded files
+(attachments, visibility = private);
+:HTTP 201 {submission, status = submitted};
+|Browser (React SPA)|
+:Show "Submitted" badge;
+
+|Teacher|
+:Open assignment → "Submissions";
+|Browser (React SPA)|
+:GET /api/teacher/homework/{id}/submissions;
+|API (Laravel)|
+:List roster with per-student status
+(not_submitted / submitted / late / graded);
+|Teacher|
+:Open a submission, read content
+and attachments;
+:Enter score and feedback → "Return";
+|Browser (React SPA)|
+:POST /api/teacher/homework/{id}/submissions/{sid}/grade
+{score, feedback};
+|API (Laravel)|
+:assertOwns(assignment);
+if (0 ≤ score ≤ max_score?) then (no)
+  :HTTP 422 "Score out of range";
+  end
+else (yes)
+endif
+|DBMS|
+:UPDATE homework_submissions
+SET score, feedback, graded_by,
+graded_at = now(), returned_at = now();
+|API (Laravel)|
+:Notify student (HomeworkReturnedNotification);
+:HTTP 200 {submission, status = graded};
+
+|Student|
+:View score and feedback;
+stop
+@enduml

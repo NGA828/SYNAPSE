@@ -1,0 +1,571 @@
+@startuml 02-class-diagram
+!pragma layout smetana
+!include _style.iuml
+skinparam classFontSize 12
+skinparam classAttributeFontSize 10
+skinparam packageFontStyle bold
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam nodesep 30
+skinparam ranksep 45
+hide empty methods
+hide circle
+
+title SYNAPSE — Domain Class Diagram (all 37 Eloquent models, backend/app/Models)
+
+' =====================================================================
+package "Tenancy & Billing" as PKG_TENANCY <<Frame>> {
+  class School {
+    - id : int
+    - name : string
+    - slug : string {unique}
+    - code : string {unique}
+    - email : string
+    - phone : string
+    - address : string
+    - logo : text
+    - status : enum {active, trial, suspended, expired}
+    - timezone : string = "Africa/Douala"
+    - primary_color : string
+    - subscription_plan_id : int
+    - subscription_status : string
+    - subscription_started_at : datetime
+    - subscription_expires_at : datetime
+    + isActive() : bool
+    + setting(key, default) : mixed
+    + setSetting(key, value) : void
+  }
+  class SchoolSetting {
+    - id : int
+    - school_id : int
+    - key : string
+    - value : text
+  }
+  class SubscriptionPlan {
+    - id : int
+    - name : string
+    - slug : string {unique}
+    - description : text
+    - price : decimal(12,2)
+    - billing_interval : enum {monthly, yearly}
+    - currency : string = "XAF"
+    - max_students : int
+    - max_teachers : int
+    - max_classes : int
+    - features : json
+    - status : enum {active, archived}
+    + hasFeature(feature) : bool
+  }
+  class Subscription {
+    - id : int
+    - school_id : int
+    - plan_id : int
+    - status : enum {trial, active, past_due,\n   cancelled, expired, suspended}
+    - start_date : date
+    - end_date : date
+    - billing_interval : string
+    - amount : decimal(12,2)
+    - currency : string
+    + isActive() : bool
+  }
+  class Payment {
+    - id : int
+    - school_id : int
+    - subscription_id : int
+    - provider : enum {mock, mtn_momo, orange_money, card}
+    - method : string
+    - amount : decimal(12,2)
+    - currency : string
+    - status : enum {pending, succeeded, failed, refunded}
+    - reference : string {unique}
+    - metadata : json
+    - sandbox : bool
+    - paid_at : datetime
+  }
+  class AuditLog {
+    - id : int
+    - school_id : int
+    - user_id : int
+    - action : string
+    - entity_type : string
+    - entity_id : int
+    - metadata : json
+    - created_at : datetime
+  }
+}
+
+' =====================================================================
+package "People & Access" as PKG_PEOPLE <<Frame>> {
+  class User {
+    - id : int
+    - school_id : int
+    - name : string
+    - email : string {unique}
+    - phone : string
+    - password : string
+    - role : enum {super_admin, admin, teacher, student}
+    - must_change_password : bool
+    - password_changed_at : datetime
+    - last_login_at : datetime
+    - notify_email : bool = true
+    - notify_sms : bool = false
+    - locale : string = "en"
+    + isSuperAdmin() : bool
+    + isAdmin() : bool
+    + isTeacher() : bool
+    + isStudent() : bool
+    + routeNotificationForSms() : string
+  }
+  class PersonalAccessToken <<Sanctum>> {
+    - id : int
+    - tokenable_type : string
+    - tokenable_id : int
+    - name : string
+    - token : string {unique, sha256}
+    - abilities : text
+    - last_used_at : datetime
+    - expires_at : datetime
+  }
+  class Student {
+    - id : int
+    - school_id : int
+    - user_id : int
+    - matricule : string {unique}
+  }
+  class Teacher {
+    - id : int
+    - school_id : int
+    - user_id : int
+    - staff_no : string {unique}
+  }
+  class Notification {
+    - id : int
+    - school_id : int
+    - user_id : int
+    - type : string
+    - title : string
+    - message : text
+    - data : json
+    - read_at : datetime
+    + markAsRead() : void
+  }
+}
+
+' =====================================================================
+package "Academic Structure" as PKG_ACADEMIC <<Frame>> {
+  class AcademicYear {
+    - id : int
+    - school_id : int
+    - name : string
+    - start_date : date
+    - end_date : date
+    - is_current : bool
+    + {static} current() : AcademicYear
+  }
+  class Semester {
+    - id : int
+    - school_id : int
+    - academic_year_id : int
+    - name : string
+    - sequence : int
+    - start_date : date
+    - end_date : date
+    - is_current : bool
+    + {static} current() : Semester
+  }
+  class SchoolClass {
+    - id : int
+    - school_id : int
+    - name : string
+  }
+  class Subject {
+    - id : int
+    - school_id : int
+    - name : string
+    - code : string
+  }
+  class Enrollment {
+    - id : int
+    - school_id : int
+    - student_id : int
+    - class_id : int
+    - academic_year_id : int
+  }
+  class TeachingAssignment {
+    - id : int
+    - school_id : int
+    - teacher_id : int
+    - subject_id : int
+    - class_id : int
+    - academic_year_id : int
+  }
+  class TimetableEntry {
+    - id : int
+    - school_id : int
+    - class_id : int
+    - academic_year_id : int
+    - subject_id : int
+    - day : int (1..7)
+    - start : time
+    - end : time
+  }
+  class Exam {
+    - id : int
+    - school_id : int
+    - academic_year_id : int
+    - semester_id : int
+    - subject_id : int
+    - class_id : int
+    - date : date
+    - start : time
+    - end : time
+    - room : string
+  }
+}
+
+' =====================================================================
+package "Assessment" as PKG_ASSESS <<Frame>> {
+  class GradeComponent {
+    - id : int
+    - school_id : int
+    - subject_id : int
+    - name : string
+    - weight : decimal(5,2)
+    - sequence : int
+  }
+  class Grade {
+    - id : int
+    - school_id : int
+    - student_id : int
+    - subject_id : int
+    - class_id : int
+    - academic_year_id : int
+    - semester_id : int
+    - teacher_id : int
+    - test1 : decimal(5,2)
+    - test2 : decimal(5,2)
+    - exam : decimal(5,2)
+  }
+  class GradeScore {
+    - id : int
+    - school_id : int
+    - grade_id : int
+    - component_id : int
+    - score : decimal(5,2)
+  }
+  class Attendance {
+    - id : int
+    - school_id : int
+    - class_id : int
+    - student_id : int
+    - academic_year_id : int
+    - teacher_id : int
+    - date : date
+    - status : enum {present, absent, late, excused}
+    - remark : string
+  }
+  class ReportCardComment {
+    - id : int
+    - school_id : int
+    - student_id : int
+    - subject_id : int
+    - academic_year_id : int
+    - semester_id : int
+    - body : text
+    - source : enum {teacher, generated, ai}
+    - is_locked : bool
+    - written_by : int
+    + wasAiDrafted() : bool
+  }
+}
+
+' =====================================================================
+package "Documents" as PKG_DOCS <<Frame>> {
+  class DocumentRequest {
+    - id : int
+    - school_id : int
+    - student_id : int
+    - reference : string {unique, REQ-####}
+    - type : string
+    - reason : text
+    - status : enum {submitted, under_review,\n   approved, ready, rejected}
+    - admin_note : text
+    - resolved_at : datetime
+    + typeSlug() : string
+    + isAutoGeneratable() : bool
+  }
+  class Document {
+    - id : int
+    - school_id : int
+    - request_id : int
+    - student_id : int
+    - issued_by : int
+    - type : string
+    - title : string
+    - file_name : string
+    - mime_type : string = "application/pdf"
+    - size : int
+    - disk : string
+    - path : string
+    - verification_code : string {unique}
+    - meta : json
+  }
+}
+
+' =====================================================================
+package "Learning" as PKG_LEARN <<Frame>> {
+  interface HasAttachments <<App\\Contracts>> {
+    + attachments() : MorphMany
+    + ownedByTeacher(teacher) : bool
+    + readableByStudent(student) : bool
+  }
+  class HomeworkAssignment {
+    - id : int
+    - school_id : int
+    - teacher_id : int
+    - subject_id : int
+    - class_id : int
+    - academic_year_id : int
+    - semester_id : int
+    - title : string
+    - instructions : text
+    - max_score : int = 20
+    - due_at : datetime
+    - is_published : bool
+    - published_at : datetime
+    + isPastDue() : bool
+    + isOpenForSubmission() : bool
+  }
+  class HomeworkSubmission {
+    - id : int
+    - school_id : int
+    - homework_assignment_id : int
+    - student_id : int
+    - content : text
+    - attempts : int = 1
+    - submitted_at : datetime
+    - is_late : bool
+    - score : decimal(6,2)
+    - feedback : text
+    - graded_by : int
+    - graded_at : datetime
+    - returned_at : datetime
+    + isGraded() : bool
+    + status() : enum {submitted, late, graded}
+  }
+  class Lesson {
+    - id : int
+    - school_id : int
+    - teacher_id : int
+    - subject_id : int
+    - class_id : int
+    - academic_year_id : int
+    - semester_id : int
+    - title : string
+    - topic : string
+    - summary : text
+    - body : longtext
+    - minutes : int
+    - sequence : int
+    - is_published : bool
+    - published_at : datetime
+  }
+  class Quiz {
+    - id : int
+    - school_id : int
+    - teacher_id : int
+    - subject_id : int
+    - class_id : int
+    - academic_year_id : int
+    - semester_id : int
+    - title : string
+    - instructions : text
+    - max_score : int = 20
+    - closes_at : datetime
+    - time_limit_minutes : int
+    - attempts_allowed : int = 1
+    - is_published : bool
+    - is_locked : bool
+    + pointsAvailable() : int
+    + isOpen() : bool
+  }
+  class QuizQuestion {
+    - id : int
+    - school_id : int
+    - quiz_id : int
+    - prompt : text
+    - options : json
+    - correct_option : int
+    - points : int = 1
+    - sequence : int
+    + isCorrect(option) : bool
+  }
+  class QuizAttempt {
+    - id : int
+    - school_id : int
+    - quiz_id : int
+    - student_id : int
+    - answers : json
+    - correct_count : int
+    - total_questions : int
+    - score : decimal(5,2)
+    - attempt : int
+    - started_at : datetime
+    - submitted_at : datetime
+    - feedback : text
+    - is_reviewed : bool
+    - reviewed_by : int
+    + percentage() : float
+  }
+  class Attachment {
+    - id : int
+    - school_id : int
+    - attachable_type : string
+    - attachable_id : int
+    - uploaded_by_role : enum {teacher, student}
+    - uploaded_by : int
+    - file_name : string
+    - mime_type : string
+    - size : int
+    - disk : string = "local"
+    - path : string
+    - visibility : enum {class, private}
+    + isPrivate() : bool
+    + humanSize() : string
+  }
+}
+
+' =====================================================================
+package "Communication" as PKG_COMM <<Frame>> {
+  class Conversation {
+    - id : int
+    - school_id : int
+    - participant_a_id : int
+    - participant_b_id : int
+    - last_message_at : datetime
+    + otherParticipant(user) : User
+    + includes(user) : bool
+  }
+  class Message {
+    - id : int
+    - school_id : int
+    - conversation_id : int
+    - sender_id : int
+    - body : text
+    - read_at : datetime
+    + isRead() : bool
+  }
+  class Announcement {
+    - id : int
+    - school_id : int
+    - user_id : int
+    - title : string
+    - body : text
+    - audience : enum {all, students, teachers}
+    - published_at : datetime
+  }
+  class Event {
+    - id : int
+    - school_id : int
+    - user_id : int
+    - title : string
+    - description : text
+    - type : string
+    - starts_at : datetime
+    - ends_at : datetime
+    - all_day : bool
+    - location : string
+    - audience : enum {all, students, teachers}
+    - is_published : bool
+  }
+}
+
+' =====================================================================
+' Tenancy
+School "1" *-- "0..*" SchoolSetting : settings
+School "1" *-- "0..*" User : users
+School "1" o-- "0..*" Subscription : subscriptions
+School "1" o-- "0..*" Payment : payments
+School "0..1" -- "0..*" AuditLog
+School "0..*" --> "0..1" SubscriptionPlan : current plan
+SubscriptionPlan "1" -- "0..*" Subscription : plan
+Subscription "0..1" -- "0..*" Payment
+User "0..1" -- "0..*" AuditLog : actor
+
+' People
+User "1" -- "0..1" Student : profile
+User "1" -- "0..1" Teacher : profile
+User "1" *-- "0..*" Notification
+User "1" *-- "0..*" PersonalAccessToken : tokenable
+
+' Academic structure
+AcademicYear "1" *-- "0..*" Semester
+Student "1" -- "0..*" Enrollment
+SchoolClass "1" -- "0..*" Enrollment
+AcademicYear "1" -- "0..*" Enrollment
+Teacher "1" -- "0..*" TeachingAssignment
+Subject "1" -- "0..*" TeachingAssignment
+SchoolClass "1" -- "0..*" TeachingAssignment
+SchoolClass "1" -- "0..*" TimetableEntry
+Subject "1" -- "0..*" TimetableEntry
+SchoolClass "1" -- "0..*" Exam
+Subject "1" -- "0..*" Exam
+Semester "0..1" -- "0..*" Exam
+
+' Assessment
+Student "1" -- "0..*" Grade
+Subject "1" -- "0..*" Grade
+Teacher "1" -- "0..*" Grade : entered by
+Grade "1" *-- "0..*" GradeScore
+GradeComponent "1" -- "0..*" GradeScore
+Subject "0..1" -- "0..*" GradeComponent : overrides defaults
+Student "1" -- "0..*" Attendance
+SchoolClass "1" -- "0..*" Attendance
+Student "1" -- "0..*" ReportCardComment
+User "0..1" -- "0..*" ReportCardComment : written_by
+
+' Documents
+Student "1" -- "0..*" DocumentRequest
+DocumentRequest "0..1" -- "0..*" Document
+Student "0..1" -- "0..*" Document
+User "0..1" -- "0..*" Document : issued_by
+
+' Learning
+Teacher "1" -- "0..*" HomeworkAssignment
+SchoolClass "1" -- "0..*" HomeworkAssignment
+HomeworkAssignment "1" *-- "0..*" HomeworkSubmission
+Student "1" -- "0..*" HomeworkSubmission
+Teacher "0..1" -- "0..*" HomeworkSubmission : graded_by
+Teacher "1" -- "0..*" Lesson
+Teacher "1" -- "0..*" Quiz
+Quiz "1" *-- "0..*" QuizQuestion
+Quiz "1" *-- "0..*" QuizAttempt
+Student "1" -- "0..*" QuizAttempt
+HasAttachments "1" *-- "0..*" Attachment : attachable (polymorphic)
+User "0..1" -- "0..*" Attachment : uploaded_by
+HomeworkAssignment ..|> HasAttachments
+HomeworkSubmission ..|> HasAttachments
+Lesson ..|> HasAttachments
+Quiz ..|> HasAttachments
+
+' Communication
+Conversation "1" *-- "0..*" Message
+User "1" -- "0..*" Message : sender
+User "2" -- "0..*" Conversation : participants
+User "1" -- "0..*" Announcement : author
+User "0..1" -- "0..*" Event : author
+
+note as N1
+  <b>Conventions</b>
+  • Every class also carries <i>created_at</i> / <i>updated_at</i> (Laravel timestamps) unless noted.
+  • Foreign keys are shown as attributes (<i>*_id</i>) exactly as they exist in the database;
+    only the structurally important associations are drawn to keep the diagram readable
+    (e.g. <i>academic_year_id</i> / <i>semester_id</i> / <i>subject_id</i> on Grade, Exam, Homework, Lesson, Quiz…).
+  • Every class outside <b>Tenancy & Billing</b> (except PersonalAccessToken) uses the
+    <i>BelongsToSchool</i> trait: a global <i>TenantScope</i> filters by <i>school_id</i> and
+    fills it on create from <i>TenantContext</i>. That implicit <b>School 1 — * X</b> composition
+    is therefore not repeated for each class.
+  • Roles are not subclasses: a <i>User</i> has a role and optionally a Student or Teacher profile.
+end note
+N1 .. PKG_TENANCY
+@enduml

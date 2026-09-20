@@ -1,0 +1,100 @@
+@startuml 21-sequence-enter-grades
+!include _style.iuml
+title Sequence Diagram — UC-02 Enter grades & generate report card
+autonumber "<b>0."
+hide footbox
+
+actor "Teacher" as teacher
+actor "School\nAdministrator" as admin
+participant "Browser\n(React SPA)" as spa
+participant "API\n(Laravel)" as api
+participant "GradeService" as gs
+participant "DocumentService\n+ PdfRenderer" as ds
+queue "Queue\n(documents)" as q
+database "DBMS" as db
+
+teacher -> spa : open Gradebook (class, subject)
+activate spa
+spa -> api : GET /api/teacher/classes/{class}/subjects/{subject}/grades
+activate api
+api -> api : middleware auth:sanctum · tenant · role:teacher\n· subscription · teaching.assignment
+alt no current academic year
+  api --> spa : 409 {message}
+else teacher not assigned to class/subject
+  api --> spa : 403
+else assigned
+  api -> gs : gradebook(teacher, class, subject)
+  activate gs
+  gs -> db : SELECT enrollments (class, current year)\nSELECT grades + grade_scores\nSELECT grade_components (subject ?? defaults)
+  db --> gs : rows
+  gs --> api : {students, components, rows}
+  deactivate gs
+  api --> spa : 200 gradebook
+  deactivate api
+  spa --> teacher : editable grid
+end
+
+loop for each student row
+  teacher -> spa : type test1 / test2 / exam / component scores
+end
+teacher -> spa : click "Save"
+spa -> api : POST …/grades {rows[]}
+activate api
+api -> api : StoreGradesRequest: numeric 0..20, ids exist
+alt validation error
+  api --> spa : 422 {errors}
+  spa --> teacher : highlight cells
+else valid
+  api -> gs : save(teacher, class, subject, rows)
+  activate gs
+  gs -> gs : assertAssigned(); effectiveComponents()
+  gs -> db : SELECT enrolled student ids
+  loop for each row of an enrolled student
+    gs -> db : UPSERT grades (student, subject, class, year, semester, teacher, test1, test2, exam)
+    gs -> db : UPSERT grade_scores (grade_id, component_id, score)
+  end
+  gs --> api : refreshed gradebook
+  deactivate gs
+  api --> spa : 200 gradebook
+  deactivate api
+  spa --> teacher : "Grades saved" + averages
+  deactivate spa
+end
+
+== Report card ==
+admin -> spa : open student → "Report card (PDF)"
+activate spa
+spa -> api : GET /api/admin/students/{student}/report-card
+activate api
+api -> api : role:admin · feature:report_cards
+api -> gs : reportCard(student, year, semester)
+activate gs
+gs -> db : SELECT grades, scores, components, comments for the class
+db --> gs : rows
+gs -> gs : subject averages, weighted total, class rank
+gs --> api : ReportCardData
+deactivate gs
+api -> ds : generateReportCard(student, data)
+activate ds
+ds -> ds : Blade template → dompdf → PDF bytes
+ds -> db : INSERT documents (type report_card, path, verification_code)
+ds --> api : Document + file
+deactivate ds
+api --> spa : 200 application/pdf
+deactivate api
+spa --> admin : download / print
+deactivate spa
+
+opt whole class (bulk)
+  admin -> spa : "Generate report cards for class"
+  spa -> api : POST /api/admin/classes/{class}/report-cards
+  activate api
+  api -> q : dispatch GenerateClassReportCardsJob(class, year, semester)
+  api --> spa : 202 Accepted {queued: n}
+  deactivate api
+  q -> gs : reportCard() for each enrolled student (chunks of 25)
+  q -> ds : generateReportCard()
+  ds -> db : INSERT documents
+  q -> db : INSERT notifications (ReportCardReadyNotification)
+end
+@enduml

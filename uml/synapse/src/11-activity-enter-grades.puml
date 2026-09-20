@@ -1,0 +1,127 @@
+@startuml 11-activity-enter-grades
+!pragma layout smetana
+!include _style.iuml
+title Activity Diagram — UC-02 Enter grades & generate report card
+
+|Teacher|
+start
+:Open "Gradebook" for a
+class / subject assignment;
+
+|Browser (React SPA)|
+:GET /api/teacher/classes/{class}/subjects/{subject}/grades;
+
+|API (Laravel)|
+:Middleware: auth:sanctum, tenant,
+role:teacher, subscription;
+if (Current academic year defined?) then (no)
+  :HTTP 409 "No current academic year";
+  |Browser (React SPA)|
+  :Show blocking notice;
+  stop
+else (yes)
+endif
+|API (Laravel)|
+if (TeachingAssignment exists for\nteacher + subject + class + year?) then (no)
+  :HTTP 403 "Not assigned to this class";
+  |Browser (React SPA)|
+  :Show forbidden page;
+  stop
+else (yes)
+endif
+|API (Laravel)|
+:GradeService::gradebook()
+resolve effective grade components
+(subject-specific, else school defaults);
+|DBMS|
+:SELECT enrolled students, grades,
+grade_scores, grade_components;
+|API (Laravel)|
+:HTTP 200 {students, components, rows};
+
+|Browser (React SPA)|
+:Render editable grid
+(one row per enrolled student);
+
+|Teacher|
+repeat
+  :Type test / exam / component
+  scores for a student;
+repeat while (More students?) is (yes)
+->no;
+|Teacher|
+:Click "Save grades";
+
+|Browser (React SPA)|
+:POST …/grades {rows[{student_id, test1,
+test2, exam, scores[{component_id, score}]}]};
+
+|API (Laravel)|
+if (Rows valid?\n(numbers within 0..20, ids exist)) then (no)
+  :HTTP 422 with row errors;
+  |Browser (React SPA)|
+  :Highlight invalid cells;
+  |Teacher|
+  :Fix values;
+  end
+else (yes)
+endif
+|API (Laravel)|
+:GradeService::save()
+re-check assignment,
+load enrolled student ids;
+while (For each row) is (next)
+  if (Student enrolled in class\nfor the current year?) then (no)
+    :Skip row;
+  else (yes)
+    |DBMS|
+    :UPSERT grades
+    (student, subject, class, year, semester);
+    :UPSERT grade_scores per component;
+    |API (Laravel)|
+  endif
+endwhile (done)
+|API (Laravel)|
+:Return refreshed gradebook;
+|Browser (React SPA)|
+:Show "Grades saved" + averages;
+
+|School Administrator|
+:Open student → "Report card"
+or class → "Generate report cards";
+if (Whole class?) then (yes)
+  |Browser (React SPA)|
+  :POST /api/admin/classes/{class}/report-cards;
+  |API (Laravel)|
+  :HTTP 202 Accepted — dispatch
+  GenerateClassReportCardsJob
+  (queue "documents");
+  |Queue worker|
+  while (For each enrolled student\n(chunks of 25)) is (next)
+    :GradeService::reportCard()
+    (subject averages, weighted totals, rank);
+    :DocumentService::generateReportCard()
+    → PdfRenderer (dompdf + Blade);
+    |DBMS|
+    :INSERT documents
+    (type report_card, verification_code);
+    |Queue worker|
+  endwhile (done)
+|Queue worker|
+  :Notify admin + students
+  (ReportCardReadyNotification);
+else (single student)
+  |Browser (React SPA)|
+  :GET /api/admin/students/{student}/report-card;
+  |API (Laravel)|
+  :GradeService::reportCard() → PDF
+  → Document with verification code;
+  |DBMS|
+  :INSERT documents;
+  |API (Laravel)|
+  :HTTP 200 application/pdf;
+endif
+|School Administrator|
+:Download / print report card;
+stop
+@enduml

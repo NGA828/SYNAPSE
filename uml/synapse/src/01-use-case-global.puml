@@ -1,0 +1,155 @@
+@startuml 01-use-case-global
+!pragma layout smetana
+!include _style.iuml
+left to right direction
+skinparam usecaseFontSize 11
+skinparam linetype polyline
+
+title SYNAPSE — Global Use Case Diagram (overview of all roles)\nDetailed per-role diagrams: 01a (student), 01b (teacher), 01c (school administrator), 01d (platform & guest)
+
+' ================= primary actors (left) =================
+actor "Authenticated\nUser" as auth
+actor "Guest" as guest
+actor "Student" as student
+actor "Teacher" as teacher
+actor "School\nAdministrator" as admin
+actor "Super\nAdministrator" as superadmin
+
+student -up-|> auth
+teacher -up-|> auth
+admin -up-|> auth
+superadmin -up-|> auth
+
+rectangle "SYNAPSE — multi-tenant school management platform" as SYS {
+
+  ' --- common ---
+  usecase "Authenticate" as UC_auth
+  usecase "Manage account\n(password, profile, sessions)" as UC_account
+  usecase "View notifications\n& announcements" as UC_notif
+  usecase "Exchange messages" as UC_msg
+  usecase "View calendar & events" as UC_cal
+
+  ' --- public ---
+  usecase "View landing page" as UC_land
+  usecase "Register school\n(onboarding)" as UC_onboard
+  usecase "Choose plan &\nstart free trial" as UC_trial
+  usecase "Verify document\nauthenticity" as UC_verify
+  usecase "Reset forgotten password" as UC_reset
+
+  ' --- student ---
+  usecase "Consult academic record\n(grades, report card, transcript,\ntimetable, attendance, exams)" as UC_record
+  usecase "Request document" as UC_req
+  usecase "Download issued\ndocuments (PDF)" as UC_doc
+  usecase "Do homework & quizzes" as UC_learn
+  usecase "Browse course materials" as UC_mat
+  usecase "Chat with AI\nstudy assistant" as UC_tutor
+
+  ' --- teacher ---
+  usecase "Enter grades" as UC_enter
+  usecase "Take attendance" as UC_att
+  usecase "Manage homework &\ngrade submissions" as UC_hw
+  usecase "Publish course materials" as UC_lesson
+  usecase "Manage quizzes" as UC_quiz
+  usecase "Write report-card\ncomments" as UC_comment
+  usecase "View class analytics\n& at-risk register" as UC_tana
+
+  ' --- admin ---
+  usecase "Manage school structure\n(years, semesters, classes, subjects)" as UC_struct
+  usecase "Manage teachers & students\n(incl. CSV import)" as UC_people
+  usecase "Assign teachers to\nclasses & subjects" as UC_assign
+  usecase "Manage timetable & exams" as UC_tt
+  usecase "Process document requests\n& issue PDFs" as UC_process
+  usecase "Generate report cards\n& transcripts" as UC_bulk
+  usecase "Publish announcements\n& events" as UC_pub
+  usecase "Manage billing\n(upgrade / renew plan)" as UC_bill
+  usecase "View school analytics\n& audit log" as UC_aana
+  usecase "Manage settings & branding" as UC_settings
+
+  ' --- super admin ---
+  usecase "Manage schools\n(create, suspend, activate)" as UC_schools
+  usecase "Manage subscription plans" as UC_plans
+  usecase "View subscriptions,\npayments & platform audit log" as UC_subs
+
+  ' --- shared services ---
+  usecase "Deliver notification\n(bell, e-mail, SMS)" as UC_notify
+  usecase "Pay subscription" as UC_pay
+  usecase "Draft text with AI" as UC_ai
+}
+
+' ================= secondary actors (right) =================
+actor "Mail server\n(SMTP)" as smtp <<external>>
+actor "SMS gateway" as sms <<external>>
+actor "Payment gateway\n(MTN MoMo / Orange Money / Card)" as paygw <<external>>
+actor "AI provider\n(OpenAI-compatible API)" as ai <<external>>
+
+' ================= associations =================
+auth -- UC_auth
+auth -- UC_account
+auth -- UC_notif
+auth -- UC_msg
+auth -- UC_cal
+
+guest -- UC_land
+guest -- UC_onboard
+guest -- UC_verify
+guest -- UC_reset
+guest -- UC_auth
+
+student -- UC_record
+student -- UC_req
+student -- UC_doc
+student -- UC_learn
+student -- UC_mat
+student -- UC_tutor
+
+teacher -- UC_enter
+teacher -- UC_att
+teacher -- UC_hw
+teacher -- UC_lesson
+teacher -- UC_quiz
+teacher -- UC_comment
+teacher -- UC_tana
+
+admin -- UC_struct
+admin -- UC_people
+admin -- UC_assign
+admin -- UC_tt
+admin -- UC_process
+admin -- UC_bulk
+admin -- UC_pub
+admin -- UC_bill
+admin -- UC_aana
+admin -- UC_settings
+
+superadmin -- UC_schools
+superadmin -- UC_plans
+superadmin -- UC_subs
+
+' ================= include / extend =================
+UC_onboard ..> UC_trial : <<include>>
+UC_bill ..> UC_pay : <<include>>
+UC_ai .> UC_comment : <<extend>>
+UC_ai .> UC_pub : <<extend>>
+UC_req ..> UC_notify : <<include>>
+UC_process ..> UC_notify : <<include>>
+UC_hw ..> UC_notify : <<include>>
+UC_bulk ..> UC_notify : <<include>>
+UC_pub ..> UC_notify : <<include>>
+UC_pay ..> UC_notify : <<include>>
+UC_reset ..> UC_notify : <<include>>
+
+' ================= external systems =================
+UC_notify -- smtp
+UC_notify -- sms
+UC_pay -- paygw
+UC_tutor -- ai
+UC_ai -- ai
+
+note bottom of SYS
+  Roles come from <b>User.role</b> (super_admin, admin, teacher, student).
+  Every role-specific use case <b>includes Authenticate</b> (Sanctum bearer token),
+  is tenant-scoped to the caller's school, and — for student & teacher —
+  requires an active subscription. The include arrows are drawn on the
+  per-role diagrams to keep this overview legible.
+end note
+@enduml
