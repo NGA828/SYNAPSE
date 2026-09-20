@@ -1,0 +1,90 @@
+@startuml 14-activity-take-attendance
+!pragma layout smetana
+!include _style.iuml
+title Activity Diagram — UC-05 Take attendance
+
+|Teacher|
+start
+:Open "Attendance" for one of
+my classes and pick a date;
+
+|Browser (React SPA)|
+:GET /api/teacher/classes/{class}/attendance?date=YYYY-MM-DD;
+
+|API (Laravel)|
+:Middleware class.access (EnsureClassAccess);
+if (Current academic year defined?) then (no)
+  :HTTP 409;
+  |Browser (React SPA)|
+  :Show blocking notice;
+  stop
+else (yes)
+endif
+|API (Laravel)|
+if (Teacher assigned to this class\nin the current year?) then (no)
+  :HTTP 403;
+  |Browser (React SPA)|
+  :Show forbidden page;
+  stop
+else (yes)
+endif
+|API (Laravel)|
+:AttendanceService::roster();
+|DBMS|
+:SELECT enrolled students +
+attendance rows for (class, year, date);
+|API (Laravel)|
+:HTTP 200 {date, students[{id, name,
+status (default present), remark}]};
+
+|Browser (React SPA)|
+:Render roster with status buttons
+(present / absent / late / excused);
+
+|Teacher|
+repeat
+  :Set a student's status
+  (and an optional remark);
+repeat while (More students to mark?) is (yes)
+->no;
+|Teacher|
+:Click "Save attendance";
+
+|Browser (React SPA)|
+:POST …/attendance {date, records[{student_id, status, remark}]};
+
+|API (Laravel)|
+if (Payload valid? (date Y-m-d,\nstatus in enum, remark ≤ 255)) then (no)
+  :HTTP 422;
+  |Browser (React SPA)|
+  :Show errors;
+  end
+else (yes)
+endif
+|API (Laravel)|
+:AttendanceService::save()
+assertCanManageClass();
+|DBMS|
+:SELECT student ids enrolled in
+(class, current year);
+|API (Laravel)|
+while (For each record) is (next)
+  if (Student enrolled\nand status valid?) then (no)
+    :Skip record;
+  else (yes)
+    |DBMS|
+    :UPSERT attendances keyed by
+    (school, class, student, year, date)
+    with teacher_id, status, remark;
+    |API (Laravel)|
+  endif
+endwhile (done)
+|API (Laravel)|
+:HTTP 200 refreshed roster;
+
+|Browser (React SPA)|
+:Show "Attendance saved" and
+counts per status;
+|Teacher|
+stop
+@enduml

@@ -1,0 +1,117 @@
+@startuml 13-activity-onboard-subscribe
+!pragma layout smetana
+!include _style.iuml
+title Activity Diagram — UC-04 Onboard a school & pay a subscription
+
+|Guest / School Administrator|
+start
+:Open landing page → "Start free trial";
+
+|Browser (React SPA)|
+:GET /api/onboarding/plans;
+|API (Laravel)|
+|DBMS|
+:SELECT active subscription plans
+ORDER BY price;
+|Browser (React SPA)|
+:Show plan cards;
+
+|Guest / School Administrator|
+:Choose a plan;
+:Fill school details (name, slug, contact)
+and administrator account (name, e-mail, password);
+:Submit registration;
+
+|Browser (React SPA)|
+:POST /api/onboarding/register
+{school{…}, admin{…}, plan_id};
+
+|API (Laravel)|
+if (Valid? slug unique, admin e-mail unique,\npassword ≥ 8, plan exists) then (no)
+  :HTTP 422 field errors;
+  |Browser (React SPA)|
+  :Show errors;
+  end
+else (yes)
+endif
+|API (Laravel)|
+if (Plan active?) then (no)
+  :HTTP 422 "Plan not available";
+  end
+else (yes)
+endif
+|API (Laravel)|
+:OnboardingService::register()
+BEGIN TRANSACTION;
+|DBMS|
+:INSERT schools (status = trial,
+timezone = Africa/Douala);
+:INSERT users (role = admin,
+school_id);
+:INSERT subscriptions (status = trial,
+end_date = today + 14 days);
+:UPDATE schools SET subscription_plan_id,
+subscription_status, expires_at;
+:INSERT audit_logs ("school.onboarded");
+:COMMIT;
+|API (Laravel)|
+:HTTP 201 "School created — sign in
+with the administrator account";
+
+|Browser (React SPA)|
+:Redirect to login;
+|Guest / School Administrator|
+:Sign in (UC-01 Authenticate)
+and use the platform during the trial;
+:Open "Billing" → choose plan
+and payment provider
+(MTN MoMo, Orange Money, card);
+:Confirm payment;
+
+|Browser (React SPA)|
+:POST /api/admin/billing/upgrade
+{plan_id, provider, method};
+
+|API (Laravel)|
+:BillingService::upgrade()
+→ PaymentService::charge();
+|Payment gateway|
+:Charge the school
+(sandbox mock in development);
+|API (Laravel)|
+if (Payment succeeded?) then (no)
+  |DBMS|
+  :INSERT payments (status = failed);
+  |API (Laravel)|
+  :HTTP 422 "Payment failed";
+  |Browser (React SPA)|
+  :Show failure, keep current plan;
+  stop
+else (yes)
+endif
+|DBMS|
+:INSERT payments (status = succeeded,
+reference, paid_at);
+|API (Laravel)|
+:SubscriptionService::changePlan()
+start = previous end date if in the future,
+otherwise today; end = start + 1 interval;
+|DBMS|
+:INSERT subscriptions (status = active);
+:UPDATE schools (plan, status = active,
+subscription_expires_at);
+:UPDATE payments SET subscription_id;
+:INSERT audit_logs ("subscription.upgraded");
+|API (Laravel)|
+fork
+  :Send receipt PDF to every school admin
+  (PaymentReceiptNotification);
+fork again
+  :HTTP 200 billing dashboard
+  (plan, usage, payments);
+end fork
+|Browser (React SPA)|
+:Show "Subscription active until …";
+|Guest / School Administrator|
+stop
+@enduml

@@ -1,0 +1,88 @@
+@startuml 10-activity-authenticate
+!pragma layout smetana
+!include _style.iuml
+title Activity Diagram — UC-01 Authenticate (login with e-mail & password)
+
+|User|
+start
+:Open the login page
+(/login, or the school page /school/{slug}
+that shows the school branding);
+:Enter e-mail and password;
+:Click "Sign in";
+
+|Browser (React SPA)|
+:LoginForm → AuthContext.login()
+POST /api/login {email, password};
+
+|API (Laravel)|
+if (Rate limit "login" exceeded?\n(5 attempts / minute)) then (yes)
+  :HTTP 429 Too Many Requests;
+  |Browser (React SPA)|
+  :Show "Too many attempts, retry later";
+  stop
+else (no)
+endif
+|API (Laravel)|
+if (Payload valid?\n(e-mail format, password ≥ 8)) then (no)
+  :HTTP 422 with field errors;
+  |Browser (React SPA)|
+  :Show field errors;
+  |User|
+  :Correct the form;
+  end
+else (yes)
+endif
+|API (Laravel)|
+:AuthService::login()
+look up user by e-mail
+(without tenant scope);
+|DBMS|
+:SELECT * FROM users WHERE email = ?;
+|API (Laravel)|
+if (User found AND\nHash::check(password) OK?) then (no)
+  :HTTP 422 "These credentials are incorrect";
+  |Browser (React SPA)|
+  :Show error message;
+  |User|
+  :Retry with other credentials;
+  end
+else (yes)
+endif
+|API (Laravel)|
+if (User's school suspended\nor expired?) then (yes)
+  :HTTP 403 "School account suspended";
+  |Browser (React SPA)|
+  :Show suspended notice;
+  stop
+else (no)
+endif
+|API (Laravel)|
+:Update last_login_at;
+:Create Sanctum personal access token;
+|DBMS|
+:UPDATE users SET last_login_at = now();
+:INSERT INTO personal_access_tokens;
+|API (Laravel)|
+:HTTP 200 {token, user, must_change_password};
+
+|Browser (React SPA)|
+:Store token in localStorage
+(synapse_token) and set Auth context;
+if (must_change_password?) then (yes)
+  :Redirect to /change-password;
+  |User|
+  :Choose a new password
+  (see UC "Change password");
+else (no)
+  |Browser (React SPA)|
+  :Redirect by role
+  super_admin → /super-admin
+  admin → /admin
+  teacher → /teacher
+  student → /student;
+endif
+|User|
+:Land on role dashboard;
+stop
+@enduml

@@ -1,0 +1,151 @@
+' ---------------------------------------------------------------
+'  Shared look & feel for every SYNAPSE diagram.
+'  Mirrors the Visual Paradigm CE examples in ../../uml example diagrams
+'  (white boxes, amber #E9B824 outlines, black text, no shadows).
+' ---------------------------------------------------------------
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontSize 12
+skinparam defaultFontColor black
+skinparam ArrowColor black
+skinparam ArrowFontColor black
+skinparam ArrowFontSize 11
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E9B824
+skinparam TitleFontSize 14
+skinparam TitleFontStyle bold
+skinparam roundCorner 6
+
+' --- use case ---
+skinparam actor {
+  BackgroundColor #FFC000
+  BorderColor #E9B824
+  FontColor black
+}
+skinparam usecase {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  FontColor black
+  ArrowColor black
+}
+skinparam rectangle {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  FontColor black
+}
+
+' --- class / package / component / deployment ---
+skinparam class {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  HeaderBackgroundColor white
+  FontColor black
+  AttributeFontColor black
+  AttributeFontSize 11
+  ArrowColor black
+}
+skinparam interface {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+skinparam package {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  FontColor black
+  Style rectangle
+}
+skinparam component {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  FontColor black
+}
+skinparam node {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  FontColor black
+}
+skinparam database {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+skinparam artifact {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+skinparam cloud {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+skinparam queue {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+skinparam folder {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+skinparam storage {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+skinparam agent {
+  BackgroundColor white
+  BorderColor #E9B824
+}
+
+' --- sequence ---
+skinparam sequence {
+  ActorBackgroundColor #FFC000
+  ActorBorderColor #E9B824
+  ParticipantBackgroundColor white
+  ParticipantBorderColor #E9B824
+  ParticipantBorderThickness 1.5
+  LifeLineBorderColor #E9B824
+  LifeLineBackgroundColor white
+  GroupBorderColor #E9B824
+  GroupBackgroundColor white
+  GroupHeaderFontColor black
+  GroupBodyBackgroundColor white
+  BoxBorderColor #E9B824
+  DividerBackgroundColor white
+  DividerBorderColor #E9B824
+  MessageAlignment center
+}
+
+' --- activity ---
+skinparam activity {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  FontColor black
+  StartColor #FFC000
+  EndColor #FFC000
+  BarColor #FFC000
+  DiamondBackgroundColor white
+  DiamondBorderColor #E9B824
+  DiamondFontColor black
+  ArrowColor black
+}
+skinparam swimlane {
+  BorderColor #E9B824
+  BorderThickness 1.5
+  TitleFontColor black
+  TitleFontStyle bold
+}
+
+' --- state ---
+skinparam state {
+  BackgroundColor white
+  BorderColor #E9B824
+  BorderThickness 1.5
+  FontColor black
+  StartColor #FFC000
+  EndColor #FFC000
+  ArrowColor black
+}

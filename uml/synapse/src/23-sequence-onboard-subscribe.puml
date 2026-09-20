@@ -1,0 +1,105 @@
+@startuml 23-sequence-onboard-subscribe
+!include _style.iuml
+title Sequence Diagram — UC-04 Onboard a school & pay a subscription
+autonumber "<b>0."
+hide footbox
+
+actor "Guest →\nSchool Administrator" as guest
+participant "Browser\n(React SPA)" as spa
+participant "API\n(Laravel)" as api
+participant "OnboardingService" as os
+participant "BillingService" as bs
+participant "PaymentService" as ps
+participant "SubscriptionService" as ss
+database "DBMS" as db
+participant "Payment gateway\n(MTN MoMo / Orange / Card / mock)" as gw <<external>>
+participant "Mail server" as mail <<external>>
+
+guest -> spa : open /onboarding
+activate spa
+spa -> api : GET /api/onboarding/plans
+activate api
+api -> db : SELECT subscription_plans WHERE status = active ORDER BY price
+db --> api : plans
+api --> spa : 200 {plans}
+deactivate api
+spa --> guest : plan cards
+guest -> spa : choose plan, fill school + admin form, submit
+spa -> api : POST /api/onboarding/register\n{school{name, slug, email?, phone?, address?, logo?},\n admin{name, email, password}, plan_id}
+activate api
+api -> api : RegisterSchoolRequest: slug unique,\nadmin e-mail unique, password ≥ 8, plan exists
+alt validation error
+  api --> spa : 422 {errors}
+  spa --> guest : field errors
+else valid
+  api -> os : register(data)
+  activate os
+  os -> db : SELECT subscription_plans WHERE id = ?
+  opt plan not active
+    os --> api : ValidationException "plan not available"
+    api --> spa : 422
+  end
+  os -> db : BEGIN
+  os -> db : INSERT schools (status = trial, timezone = Africa/Douala)
+  os -> db : INSERT users (role = admin, school_id, must_change_password = 0)
+  os -> ss : startTrial(school, plan)
+  activate ss
+  ss -> db : INSERT subscriptions (status = trial,\nend_date = now + synapse.trial_days (14))
+  ss -> db : UPDATE schools SET subscription_plan_id, subscription_status = trial,\nsubscription_started_at, subscription_expires_at
+  ss --> os : subscription
+  deactivate ss
+  os -> db : INSERT audit_logs ("school.onboarded")
+  os -> db : COMMIT
+  os --> api : {school, admin, subscription}
+  deactivate os
+  api --> spa : 201 {message: "sign in with the administrator account"}
+  deactivate api
+  spa --> guest : success → redirect to login
+  deactivate spa
+end
+
+== Trial period: UC-01 Authenticate, then use the platform ==
+ref over guest, spa, api : Authenticate (see 20-sequence-authenticate)
+
+== Upgrade / pay ==
+guest -> spa : Billing → choose plan + provider, confirm
+activate spa
+spa -> api : POST /api/admin/billing/upgrade {plan_id, provider?, method?}
+activate api
+api -> api : role:admin (allowed even when expired)
+api -> bs : upgrade(school, plan, provider, method, admin)
+activate bs
+bs -> ps : charge(school, plan, provider, method)
+activate ps
+ps -> ps : gateway(provider)\nmtn_momo | orange_money | card | mock
+ps -> gw : charge(amount, currency, reference, metadata)
+activate gw
+gw --> ps : {status: succeeded | failed, reference, sandbox}
+deactivate gw
+ps -> db : INSERT payments (provider, method, amount, status, reference, paid_at)
+ps --> bs : payment
+deactivate ps
+alt payment failed
+  bs --> api : PaymentFailedException
+  api --> spa : 422 {message}
+  spa --> guest : "Payment failed" (plan unchanged)
+else payment succeeded
+  bs -> ss : changePlan(school, plan)
+  activate ss
+  ss -> db : SELECT current subscription
+  ss -> db : INSERT subscriptions (status = active,\nstart = max(now, previous end), end = start + 1 month)
+  ss -> db : UPDATE schools (plan, status = active, expires_at)
+  ss --> bs : subscription
+  deactivate ss
+  bs -> db : UPDATE payments SET subscription_id
+  bs -> db : INSERT audit_logs ("subscription.upgraded")
+  bs -> bs : sendReceipt(payment)
+  bs -> mail : PaymentReceiptNotification (PDF receipt) to every admin
+  bs --> api : billing dashboard data
+  deactivate bs
+  api --> spa : 200 {subscription, plan, usage, payments}
+  deactivate api
+  spa --> guest : "Subscription active until …"
+  deactivate spa
+end
+@enduml

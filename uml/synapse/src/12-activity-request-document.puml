@@ -1,0 +1,110 @@
+@startuml 12-activity-request-document
+!pragma layout smetana
+!include _style.iuml
+title Activity Diagram — UC-03 Request an administrative document
+
+|Student|
+start
+:Open "Requests" → "New request";
+:Choose document type
+(enrolment certificate, transcript,
+good conduct, transfer, leaving,
+recommendation letter, other)
+and give a reason;
+:Submit;
+
+|Browser (React SPA)|
+:POST /api/student/requests {type, reason};
+
+|API (Laravel)|
+:Middleware: role:student,
+subscription, feature:document_management;
+if (Type in allowed list\nand reason ≤ 1000 chars?) then (no)
+  :HTTP 422;
+  |Browser (React SPA)|
+  :Show validation errors;
+  end
+else (yes)
+endif
+|API (Laravel)|
+:RequestService::create()
+generate unique reference REQ-####;
+|DBMS|
+:INSERT requests (status = submitted);
+|API (Laravel)|
+fork
+  :Notify school admins
+  (RequestSubmittedNotification:
+  bell + e-mail);
+fork again
+  :HTTP 201 {request};
+end fork
+|Browser (React SPA)|
+:Show request with status "Submitted";
+
+|School Administrator|
+:Open "Document requests";
+|Browser (React SPA)|
+:GET /api/admin/requests;
+|API (Laravel)|
+:List requests + DocumentTypeService::triage()
+(auto-generatable? needs human review?);
+|School Administrator|
+:Review request and decide;
+if (Decision?) then (reject)
+  |Browser (React SPA)|
+  :PATCH /api/admin/requests/{id}
+  {status: rejected, admin_note};
+  |API (Laravel)|
+  :Transition → rejected, set resolved_at;
+  |DBMS|
+  :UPDATE requests;
+elseif (mark under review /\napproved) then
+  |Browser (React SPA)|
+  :PATCH … {status: under_review | approved};
+  |API (Laravel)|
+  :Transition status;
+  |DBMS|
+  :UPDATE requests;
+else (generate document)
+  |Browser (React SPA)|
+  :POST /api/admin/requests/{id}/generate-document;
+  |API (Laravel)|
+  if (Type supported by\nDocumentService::generateForRequest()?) then (no)
+    :HTTP 422 with triage reason
+    (e.g. recommendation letter needs a human);
+    |Browser (React SPA)|
+    :Show reason — admin handles manually;
+    |School Administrator|
+    :Write note / change status;
+    end
+  else (yes)
+  endif
+|API (Laravel)|
+  :Render PDF (dompdf) with school
+  branding and verification code;
+  :Store file on disk;
+  |DBMS|
+  :INSERT documents (request_id, student_id,
+  issued_by, verification_code);
+  :UPDATE requests SET status = ready,
+  resolved_at = now();
+endif
+|API (Laravel)|
+:Notify student
+(RequestStatusChanged / DocumentReady:
+bell + e-mail + SMS if enabled);
+
+|Student|
+:Open notification → "My documents";
+if (Status?) then (ready)
+  |Browser (React SPA)|
+  :GET /api/student/documents/{id}/download;
+  |Student|
+  :Download PDF (anyone can later check
+  /verify/{code});
+else (rejected)
+  :Read admin note;
+endif
+stop
+@enduml

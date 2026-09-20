@@ -1,0 +1,41 @@
+@startuml 30-state-document-request
+!pragma layout smetana
+!include _style.iuml
+title State Machine Diagram — DocumentRequest lifecycle (requests.status)
+
+[*] --> Submitted : student submits request\n/ reference = REQ-####, notify admins
+
+state Submitted
+state "Under review" as UnderReview
+state Approved
+state Ready
+state Rejected
+
+Submitted --> UnderReview : admin marks "under review"\n/ notify student
+Submitted --> Approved : admin approves
+UnderReview --> Approved : admin approves\n/ notify student
+Submitted --> Ready : generate document [type auto-generatable]\n/ create Document (PDF, verification code),\nresolved_at = now, DocumentReadyNotification
+UnderReview --> Ready : generate document [type auto-generatable]\n/ create Document, resolved_at = now
+Approved --> Ready : generate document [type auto-generatable]\nor admin marks ready\n/ resolved_at = now, notify student
+Submitted --> Rejected : admin rejects [admin_note]\n/ resolved_at = now, notify student
+UnderReview --> Rejected : admin rejects [admin_note]\n/ resolved_at = now, notify student
+Approved --> Rejected : admin rejects [admin_note]\n/ resolved_at = now, notify student
+
+Ready --> [*] : student downloads document\n(document stays verifiable at /verify/{code})
+Rejected --> [*]
+
+note right of Ready
+  <b>Ready</b> and <b>Rejected</b> are terminal from the
+  business point of view (resolved_at is set).
+  Open statuses = {submitted, under_review, approved}
+  (DocumentRequest::OPEN_STATUSES).
+end note
+note bottom of Rejected
+  Implementation note: RequestService::transition()
+  accepts any of the five statuses; the order above is
+  the one offered by the admin console and used by
+  DocumentTypeService::triage() (recommendation letters
+  and "other" requests can never reach Ready automatically —
+  generateForRequest() refuses them with the triage reason).
+end note
+@enduml

@@ -1,0 +1,68 @@
+@startuml 24-sequence-take-attendance
+!include _style.iuml
+title Sequence Diagram — UC-05 Take attendance
+autonumber "<b>0."
+hide footbox
+
+actor "Teacher" as teacher
+participant "Browser\n(React SPA)" as spa
+participant "API\n(Laravel · Teacher\\AttendanceController)" as api
+participant "AttendanceService" as svc
+database "DBMS" as db
+
+teacher -> spa : open Attendance for a class, pick date
+activate spa
+spa -> api : GET /api/teacher/classes/{class}/attendance?date=2026-09-20
+activate api
+api -> api : middleware auth:sanctum · tenant · role:teacher\n· subscription · class.access (EnsureClassAccess)
+alt no current academic year
+  api --> spa : 409 {message}
+  spa --> teacher : blocking notice
+else teacher not assigned to the class this year
+  api --> spa : 403
+  spa --> teacher : forbidden
+else access granted
+  api -> svc : roster(teacher, class, date)
+  activate svc
+  svc -> db : SELECT students JOIN enrollments\nWHERE class_id = ? AND academic_year_id = current
+  svc -> db : SELECT attendances WHERE class_id, academic_year_id, date
+  db --> svc : rows
+  svc --> api : {date, students[{id, name, matricule, status = present, remark}]}
+  deactivate svc
+  api --> spa : 200 roster
+  deactivate api
+  spa --> teacher : roster with status buttons
+end
+
+loop for each student
+  teacher -> spa : set status (present | absent | late | excused) [+ remark]
+end
+teacher -> spa : click "Save attendance"
+spa -> api : POST /api/teacher/classes/{class}/attendance\n{date, records[{student_id, status, remark?}]}
+activate api
+api -> api : StoreAttendanceRequest (date Y-m-d, status enum, remark ≤ 255)
+alt validation error
+  api --> spa : 422 {errors}
+  spa --> teacher : show errors
+else valid
+  api -> svc : save(teacher, class, date, records)
+  activate svc
+  svc -> svc : assertCanManageClass(teacher, class)
+  svc -> db : SELECT student_id FROM enrollments WHERE class_id, academic_year_id
+  db --> svc : enrolled ids
+  loop for each record
+    alt student enrolled and status valid
+      svc -> db : UPSERT attendances\nkey (school_id, class_id, student_id, academic_year_id, date)\nset teacher_id, status, remark
+    else not enrolled / invalid
+      svc -> svc : skip record
+    end
+  end
+  svc -> svc : roster(teacher, class, date)
+  svc --> api : refreshed roster
+  deactivate svc
+  api --> spa : 200 roster
+  deactivate api
+  spa --> teacher : "Attendance saved" + counts per status
+  deactivate spa
+end
+@enduml

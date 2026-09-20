@@ -1,0 +1,105 @@
+@startuml 01a-use-case-student
+!pragma layout smetana
+!include _style.iuml
+left to right direction
+skinparam usecaseFontSize 11
+skinparam linetype polyline
+
+title SYNAPSE — Use Case Diagram: Student portal
+
+actor "Student" as student
+
+rectangle "SYNAPSE — Student portal  (/student/*  ·  role:student · subscription enforced)" as SYS {
+  usecase "Authenticate" as UC_auth
+  usecase "Change password\n(forced on first login)" as UC_pwd
+  usecase "Manage profile\n& sessions" as UC_profile
+  usecase "View dashboard" as UC_dash
+  usecase "View grades" as UC_grades
+  usecase "View report card" as UC_rc
+  usecase "Download report card\n/ transcript (PDF)" as UC_pdf
+  usecase "View timetable" as UC_tt
+  usecase "View attendance" as UC_att
+  usecase "View exams" as UC_exams
+  usecase "Request document" as UC_req
+  usecase "Track request status" as UC_track
+  usecase "Download issued\ndocument" as UC_doc
+  usecase "View homework" as UC_hwlist
+  usecase "Submit homework" as UC_submit
+  usecase "Upload attachment" as UC_upload
+  usecase "Browse course\nmaterials" as UC_mat
+  usecase "Take quiz" as UC_quiz
+  usecase "Review quiz attempt" as UC_review
+  usecase "View personal insights\n(at-risk signals)" as UC_insight
+  usecase "Chat with AI\nstudy assistant" as UC_tutor
+  usecase "View notifications\n& announcements" as UC_notif
+  usecase "Message a teacher\nor administrator" as UC_msg
+  usecase "View calendar\n& events" as UC_cal
+  usecase "Deliver notification\n(bell, e-mail, SMS)" as UC_notify
+}
+
+actor "Mail server\n(SMTP)" as smtp <<external>>
+actor "SMS gateway" as sms <<external>>
+actor "AI provider\n(OpenAI-compatible API)" as ai <<external>>
+
+student -- UC_auth
+student -- UC_pwd
+student -- UC_profile
+student -- UC_dash
+student -- UC_grades
+student -- UC_rc
+student -- UC_pdf
+student -- UC_tt
+student -- UC_att
+student -- UC_exams
+student -- UC_req
+student -- UC_track
+student -- UC_doc
+student -- UC_hwlist
+student -- UC_submit
+student -- UC_mat
+student -- UC_quiz
+student -- UC_review
+student -- UC_insight
+student -- UC_tutor
+student -- UC_notif
+student -- UC_msg
+student -- UC_cal
+
+UC_pwd ..> UC_auth : <<include>>
+UC_profile ..> UC_auth : <<include>>
+UC_dash ..> UC_auth : <<include>>
+UC_grades ..> UC_auth : <<include>>
+UC_rc ..> UC_auth : <<include>>
+UC_pdf ..> UC_auth : <<include>>
+UC_tt ..> UC_auth : <<include>>
+UC_att ..> UC_auth : <<include>>
+UC_exams ..> UC_auth : <<include>>
+UC_req ..> UC_auth : <<include>>
+UC_track ..> UC_auth : <<include>>
+UC_doc ..> UC_auth : <<include>>
+UC_hwlist ..> UC_auth : <<include>>
+UC_submit ..> UC_auth : <<include>>
+UC_mat ..> UC_auth : <<include>>
+UC_quiz ..> UC_auth : <<include>>
+UC_review ..> UC_auth : <<include>>
+UC_insight ..> UC_auth : <<include>>
+UC_tutor ..> UC_auth : <<include>>
+UC_notif ..> UC_auth : <<include>>
+UC_msg ..> UC_auth : <<include>>
+UC_cal ..> UC_auth : <<include>>
+
+UC_pdf .> UC_rc : <<extend>>
+UC_review .> UC_quiz : <<extend>>
+UC_submit ..> UC_upload : <<include>>
+UC_req ..> UC_notify : <<include>>
+UC_msg ..> UC_notify : <<include>>
+
+UC_notify -- smtp
+UC_notify -- sms
+UC_tutor -- ai
+
+note bottom of SYS
+  Routes: routes/api.php, group ['auth:sanctum','tenant','role:student','password.rotated','subscription'].
+  Report cards need the plan feature <b>report_cards</b>; documents need <b>document_management</b>.
+end note
+@enduml

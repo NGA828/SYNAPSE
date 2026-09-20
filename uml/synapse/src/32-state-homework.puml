@@ -1,0 +1,38 @@
+@startuml 32-state-homework
+!pragma layout smetana
+!include _style.iuml
+title State Machine Diagram — Homework assignment and submission lifecycles
+
+state "HomeworkAssignment" as HA {
+  [*] --> Draft : teacher creates\n/ is_published = false, attachments stored
+  state Draft
+  state Published : entry / published_at = now,\nHomeworkPublishedNotification to enrolled students
+  state "Closed (past due)" as Closed : derived: is_published ∧ due_at < now\n(isOpenForSubmission() = false)
+  Draft --> Published : publish [teacher owns it]
+  Published --> Draft : unpublish\n(submissions are kept)
+  Published --> Closed : due_at reached
+  Closed --> Draft : unpublish
+  Draft --> [*] : delete [owner]
+}
+
+state "HomeworkSubmission (per student)" as HS {
+  state "Not submitted" as NotSubmitted : no row for this student\n(status computed by submissionsFor())
+  state Submitted : entry / submitted_at = now,\nattempts = 1, is_late = false
+  state Graded : entry / score, feedback, graded_by,\ngraded_at = returned_at = now,\nHomeworkReturnedNotification
+
+  [*] --> NotSubmitted : assignment published
+  NotSubmitted --> Submitted : submit [assignment open ∧ enrolled\n∧ (content ∨ files)]
+  Submitted --> Submitted : resubmit [assignment open]\n/ attempts++, submitted_at = now, content replaced
+  Submitted --> Graded : teacher grades\n[0 ≤ score ≤ max_score ∧ teacher owns assignment]
+  Graded --> [*]
+  NotSubmitted --> [*] : due_at passed without submission\n(stays "not_submitted" in the roster)
+}
+
+note bottom of HS
+  Refused transitions (HTTP 422 / 403): submit when unpublished (403),
+  after due_at ("deadline passed"), empty (no text and no file), or once
+  the submission is already <b>Graded</b> ("already graded"). Late work is
+  refused, so <i>is_late</i> is never set by the current code (status "late"
+  is reserved for a future grace-period feature).
+end note
+@enduml

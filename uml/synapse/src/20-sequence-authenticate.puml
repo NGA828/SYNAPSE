@@ -1,0 +1,70 @@
+@startuml 20-sequence-authenticate
+!include _style.iuml
+title Sequence Diagram — UC-01 Authenticate
+autonumber "<b>0."
+hide footbox
+
+actor "User\n(any role)" as user
+participant "Browser\n(React SPA)" as spa
+participant "API\n(Laravel · AuthController)" as api
+participant "AuthService" as svc
+database "DBMS\n(MySQL)" as db
+
+user -> spa : open /login (or /school/{slug})
+activate spa
+spa --> user : login form
+user -> spa : enter e-mail + password, click "Sign in"
+spa -> api : POST /api/login {email, password}\n(Accept: application/json)
+activate api
+
+alt rate limit "login" exceeded (5 / min)
+  api --> spa : 429 Too Many Requests
+  spa --> user : "Too many attempts, retry later"
+else request accepted
+  api -> api : LoginRequest: validate\n(email format, password ≥ 8)
+  alt invalid payload
+    api --> spa : 422 {errors}
+    spa --> user : field errors
+  else valid
+    api -> svc : login(email, password)
+    activate svc
+    svc -> db : SELECT * FROM users WHERE email = ?\n(withoutGlobalScope TenantScope)
+    activate db
+    db --> svc : user row | ∅
+    deactivate db
+    alt user not found OR Hash::check() fails
+      svc --> api : throw ValidationException\n"These credentials are incorrect"
+      api --> spa : 422 {message}
+      spa --> user : error message
+    else credentials OK
+      opt user.school.status ∈ {suspended, expired}
+        svc --> api : throw 403 "School account suspended"
+        api --> spa : 403
+        spa --> user : suspended notice
+      end
+      svc -> db : UPDATE users SET last_login_at = now()
+      svc -> db : INSERT INTO personal_access_tokens (sha256 token)
+      db --> svc : token id
+      svc --> api : {token, must_change_password, user}
+      deactivate svc
+      api --> spa : 200 {token, user, must_change_password}
+      deactivate api
+      spa -> spa : localStorage.setItem("synapse_token")\nAuthContext.setUser(user)
+      alt must_change_password = true
+        spa --> user : redirect /change-password
+      else normal
+        spa --> user : redirect by role\n(/super-admin | /admin | /teacher | /student)
+      end
+      deactivate spa
+    end
+  end
+end
+
+== Every later request ==
+user -> spa : navigate
+spa -> api : GET /api/... \nAuthorization: Bearer <token>
+activate api
+api -> api : auth:sanctum → IdentifyTenant\n(TenantContext = user.school, never a header)\n→ EnsurePasswordIsRotated → EnsureRoleIs → EnforceSubscription
+api --> spa : 200 JSON (or 401 → SPA drops token, 403 password_change_required)
+deactivate api
+@enduml

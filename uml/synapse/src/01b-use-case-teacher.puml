@@ -1,0 +1,104 @@
+@startuml 01b-use-case-teacher
+!pragma layout smetana
+!include _style.iuml
+left to right direction
+skinparam usecaseFontSize 11
+skinparam linetype polyline
+
+title SYNAPSE — Use Case Diagram: Teacher portal
+
+actor "Teacher" as teacher
+
+rectangle "SYNAPSE — Teacher portal  (/teacher/*  ·  role:teacher · subscription enforced · assignment-scoped)" as SYS {
+  usecase "Authenticate" as UC_auth
+  usecase "View dashboard" as UC_dash
+  usecase "View teaching\nassignments" as UC_assign
+  usecase "View personal timetable" as UC_tt
+  usecase "View class roster" as UC_roster
+  usecase "Enter grades\n(gradebook)" as UC_enter
+  usecase "Verify teaching\nassignment" as UC_check
+  usecase "Take attendance" as UC_att
+  usecase "View exams & ranking" as UC_exams
+  usecase "Create homework" as UC_hw
+  usecase "Publish / unpublish\nhomework" as UC_pubhw
+  usecase "Upload attachment" as UC_upload
+  usecase "Grade submission" as UC_grade
+  usecase "Publish course\nmaterials (lessons)" as UC_lesson
+  usecase "Create quiz\n& questions" as UC_quiz
+  usecase "Publish / lock quiz" as UC_pubquiz
+  usecase "Review quiz attempts" as UC_review
+  usecase "Write report-card\ncomment" as UC_comment
+  usecase "Draft comment with AI\n(evidence-based)" as UC_ai
+  usecase "Lock comment\nfor printing" as UC_lock
+  usecase "View class analytics\n& at-risk register" as UC_ana
+  usecase "Exchange messages" as UC_msg
+  usecase "View calendar,\nevents & notifications" as UC_cal
+  usecase "Deliver notification\n(bell, e-mail, SMS)" as UC_notify
+}
+
+actor "Mail server\n(SMTP)" as smtp <<external>>
+actor "SMS gateway" as sms <<external>>
+actor "AI provider\n(OpenAI-compatible API)" as ai <<external>>
+
+teacher -- UC_auth
+teacher -- UC_dash
+teacher -- UC_assign
+teacher -- UC_tt
+teacher -- UC_roster
+teacher -- UC_enter
+teacher -- UC_att
+teacher -- UC_exams
+teacher -- UC_hw
+teacher -- UC_pubhw
+teacher -- UC_grade
+teacher -- UC_lesson
+teacher -- UC_quiz
+teacher -- UC_pubquiz
+teacher -- UC_review
+teacher -- UC_comment
+teacher -- UC_ana
+teacher -- UC_msg
+teacher -- UC_cal
+
+UC_dash ..> UC_auth : <<include>>
+UC_assign ..> UC_auth : <<include>>
+UC_tt ..> UC_auth : <<include>>
+UC_roster ..> UC_auth : <<include>>
+UC_enter ..> UC_auth : <<include>>
+UC_att ..> UC_auth : <<include>>
+UC_exams ..> UC_auth : <<include>>
+UC_hw ..> UC_auth : <<include>>
+UC_pubhw ..> UC_auth : <<include>>
+UC_grade ..> UC_auth : <<include>>
+UC_lesson ..> UC_auth : <<include>>
+UC_quiz ..> UC_auth : <<include>>
+UC_pubquiz ..> UC_auth : <<include>>
+UC_review ..> UC_auth : <<include>>
+UC_comment ..> UC_auth : <<include>>
+UC_ana ..> UC_auth : <<include>>
+UC_msg ..> UC_auth : <<include>>
+UC_cal ..> UC_auth : <<include>>
+
+UC_roster ..> UC_check : <<include>>
+UC_enter ..> UC_check : <<include>>
+UC_att ..> UC_check : <<include>>
+UC_hw ..> UC_upload : <<include>>
+UC_lesson ..> UC_upload : <<include>>
+UC_quiz ..> UC_upload : <<include>>
+UC_ai .> UC_comment : <<extend>>
+UC_lock .> UC_comment : <<extend>>
+UC_pubhw ..> UC_notify : <<include>>
+UC_grade ..> UC_notify : <<include>>
+UC_lesson ..> UC_notify : <<include>>
+UC_pubquiz ..> UC_notify : <<include>>
+UC_review ..> UC_notify : <<include>>
+
+UC_notify -- smtp
+UC_notify -- sms
+UC_ai -- ai
+
+note bottom of SYS
+  A teacher only reaches a class/subject for which a <b>TeachingAssignment</b> exists in the
+  current academic year (middleware teaching.assignment / class.access, re-checked in the services).
+end note
+@enduml

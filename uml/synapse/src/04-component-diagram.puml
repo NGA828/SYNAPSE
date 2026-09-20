@@ -1,0 +1,127 @@
+@startuml 04-component-diagram
+!pragma layout smetana
+!include _style.iuml
+skinparam componentStyle uml2
+skinparam linetype polyline
+left to right direction
+
+title SYNAPSE — Component Diagram
+
+actor "User\n(browser)" as user
+
+component "React SPA  <<web client>>" as SPA {
+  component "Auth & Onboarding\n(login, register school,\nreset password)" as SPA_AUTH
+  component "Student portal" as SPA_STU
+  component "Teacher portal" as SPA_TEA
+  component "Admin console" as SPA_ADM
+  component "Super-admin console" as SPA_SA
+  component "Shared UI & state\n(layout, ui kit, Auth/Tenant/\nSubscription contexts, hooks)" as SPA_SHARED
+  component "apiClient\n(axios, Bearer token,\nmock adapter)" as SPA_API
+  portout "HTTPS" as SPA_PORT
+}
+
+interface "REST / JSON API\n(/api/*)" as I_API
+
+component "Laravel API  <<application server>>" as API {
+  portin "/api" as API_PORT
+  component "HTTP kernel\n(routes, middleware pipeline:\ntenant · auth:sanctum · role ·\npassword.rotated · subscription · feature)" as API_KERNEL
+  component "Auth & Tenancy\n(AuthService, TenantContext,\nIdentifyTenant)" as API_AUTH
+  component "Academic\n(years, semesters, classes, subjects,\nenrolments, assignments, timetable, exams)" as API_ACAD
+  component "Assessment & Reporting\n(GradeService, AttendanceService,\nreport cards, transcripts, analytics)" as API_ASSESS
+  component "Documents\n(RequestService, DocumentTypeService,\nDocumentService)" as API_DOCS
+  component "Learning\n(HomeworkService, LessonService,\nQuizService, AttachmentService)" as API_LEARN
+  component "Communication\n(messages, announcements,\nevents, notifications)" as API_COMM
+  component "Billing & Onboarding\n(OnboardingService, BillingService,\nSubscriptionService, PaymentService)" as API_BILL
+  component "Platform admin\n(schools, plans, audit)" as API_SA
+  component "PDF renderer\n(dompdf + Blade)" as API_PDF
+  component "Notification hub\n(bell · mail · SMS channels)" as API_NOTIF
+  component "Domain models\n(Eloquent, TenantScope)" as API_MODELS
+  portout "PDO" as API_DB
+  portout "SMTP" as API_SMTP
+  portout "HTTPS" as API_HTTP
+}
+
+component "Queue worker & scheduler\n(php artisan queue:work,\nschedule:run)" as WORKER {
+  component "GenerateClassReportCardsJob" as JOB_RC
+  component "Subscription sweep,\nnotification pruning" as JOB_SWEEP
+}
+
+database "MySQL\n(tenant data, jobs,\ncache, sessions)" as DB
+folder "File storage\n(storage/app: documents,\nreceipts, attachments)" as FS
+interface "IDatabase\n(SQL)" as I_DB
+interface "IMail" as I_MAIL
+interface "ISms" as I_SMS
+interface "IPaymentGateway" as I_PAY
+interface "IAiCompletion" as I_AI
+component "SMTP server" as SMTP <<external>>
+component "SMS gateway" as SMSGW <<external>>
+component "Payment gateway\n(MTN MoMo / Orange Money / Card)" as PAYGW <<external>>
+component "AI provider\n(OpenAI-compatible)" as AI <<external>>
+
+user --> SPA_AUTH
+user --> SPA_STU
+user --> SPA_TEA
+user --> SPA_ADM
+user --> SPA_SA
+SPA_AUTH --> SPA_SHARED
+SPA_STU --> SPA_SHARED
+SPA_TEA --> SPA_SHARED
+SPA_ADM --> SPA_SHARED
+SPA_SA --> SPA_SHARED
+SPA_SHARED --> SPA_API
+SPA_API -- SPA_PORT
+SPA_PORT --( I_API
+I_API -- API_PORT
+API_PORT --> API_KERNEL
+API_KERNEL --> API_AUTH
+API_KERNEL --> API_ACAD
+API_KERNEL --> API_ASSESS
+API_KERNEL --> API_DOCS
+API_KERNEL --> API_LEARN
+API_KERNEL --> API_COMM
+API_KERNEL --> API_BILL
+API_KERNEL --> API_SA
+API_ASSESS --> API_PDF
+API_DOCS --> API_PDF
+API_BILL --> API_PDF
+API_DOCS --> API_NOTIF
+API_LEARN --> API_NOTIF
+API_COMM --> API_NOTIF
+API_BILL --> API_NOTIF
+API_ASSESS --> API_NOTIF
+API_AUTH --> API_MODELS
+API_ACAD --> API_MODELS
+API_ASSESS --> API_MODELS
+API_DOCS --> API_MODELS
+API_LEARN --> API_MODELS
+API_COMM --> API_MODELS
+API_BILL --> API_MODELS
+API_SA --> API_MODELS
+API_MODELS -- API_DB
+API_NOTIF -- API_SMTP
+API_NOTIF -- API_HTTP
+API_BILL -- API_HTTP
+API_COMM -- API_HTTP
+API_DB --( I_DB
+I_DB -- DB
+API_SMTP --( I_MAIL
+I_MAIL -- SMTP
+API_HTTP --( I_SMS
+I_SMS -- SMSGW
+API_HTTP --( I_PAY
+I_PAY -- PAYGW
+API_HTTP --( I_AI
+I_AI -- AI
+API_PDF --> FS
+API_LEARN --> FS
+WORKER --( I_DB
+JOB_RC --> API_ASSESS : runs
+JOB_SWEEP --> API_BILL : runs
+WORKER --( I_MAIL
+
+note bottom of API
+  Every authenticated request passes through <b>IdentifyTenant</b> (the school is taken
+  from the authenticated user, never from the client) so all Eloquent queries are scoped to one tenant.
+  Jobs are pushed to the <b>database</b> queue and consumed by the worker.
+end note
+@enduml

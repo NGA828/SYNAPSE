@@ -1,0 +1,72 @@
+@startuml 05-deployment-diagram
+!pragma layout smetana
+!include _style.iuml
+skinparam linetype polyline
+
+title SYNAPSE — Deployment Diagram
+
+node "User device\n<<device>>" as DEV {
+  node "Web browser\n<<execution environment>>" as BROWSER {
+    artifact "SYNAPSE SPA\n(index.html + JS/CSS bundle)" as ART_SPA_RT
+  }
+}
+node "Mobile phone\n<<device>>" as PHONE {
+  node "Mobile browser" as MBROWSER
+}
+
+node "Application server  (Linux VPS / PaaS)\n<<device>>" as APPSRV {
+  node "Nginx  <<web server>>" as NGINX {
+    artifact "frontend/dist\n(static build, Vite)" as ART_SPA
+  }
+  node "PHP-FPM 8.3  <<execution environment>>" as FPM {
+    artifact "backend/ (Laravel 13)\n<<artifact>>" as ART_API
+    component "REST API\n<<component>>" as CMP_API
+    component "Sanctum auth\n<<component>>" as CMP_AUTH
+    component "dompdf renderer\n<<component>>" as CMP_PDF
+  }
+  node "PHP CLI  <<execution environment>>" as CLI {
+    component "queue:work\n(documents, default queues)\n<<component>>" as CMP_WORKER
+    component "schedule:run (cron)\n<<component>>" as CMP_SCHED
+  }
+  node "Local disk" as DISK {
+    artifact "storage/app\n(documents, receipts,\nattachments, logs)" as ART_FILES
+  }
+}
+
+node "Database server\n<<device>>" as DBSRV {
+  database "MySQL 8\n<<execution environment>>" as MYSQL {
+    artifact "synapse schema\n(37 tables + jobs, cache,\nsessions, tokens)" as ART_DB
+  }
+}
+
+cloud "Third-party services" as EXT {
+  node "SMTP relay\n(Mailtrap / provider)" as SMTP
+  node "SMS gateway\n(HTTP API)" as SMS
+  node "Payment gateway\n(MTN MoMo · Orange Money · Card)" as PAY
+  node "AI provider\n(OpenAI-compatible API)" as AI
+}
+
+BROWSER -- NGINX : HTTPS 443\n(static files)
+BROWSER -- FPM : HTTPS 443\n/api/* JSON + Bearer token
+MBROWSER -- NGINX : HTTPS 443
+NGINX ..> FPM : fastcgi (proxy /api)
+FPM -- MYSQL : TCP 3306 (PDO)
+CLI -- MYSQL : TCP 3306
+FPM -- DISK : filesystem
+CLI -- DISK : filesystem
+FPM -- SMTP : SMTP 587 / TLS
+CLI -- SMTP : SMTP 587 / TLS
+FPM -- SMS : HTTPS
+FPM -- PAY : HTTPS (REST)
+FPM -- AI : HTTPS (chat completions)
+
+ART_SPA_RT ..> ART_SPA : <<downloaded from>>
+ART_API ..> CMP_API : <<manifest>>
+
+note bottom of APPSRV
+  Development topology: Vite dev server (:5173) proxies /api to <i>php artisan serve</i> (:8000)
+  and SQLite/MySQL locally. In production the same artifacts run behind Nginx;
+  the queue worker and scheduler may be moved to a separate host without code changes
+  (queue driver = database).
+end note
+@enduml

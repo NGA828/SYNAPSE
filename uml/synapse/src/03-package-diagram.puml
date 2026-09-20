@@ -1,0 +1,104 @@
+@startuml 03-package-diagram
+!pragma layout smetana
+!include _style.iuml
+skinparam packageFontStyle bold
+skinparam linetype polyline
+
+title SYNAPSE — Package Diagram (source organisation and dependencies)
+
+package "frontend/src  (React 19 SPA)" as FE <<Frame>> {
+  package "pages" as FE_PAGES {
+    package "public & auth" as FE_AUTH
+    package "onboarding" as FE_ONB
+    package "student" as FE_STU
+    package "teacher" as FE_TEA
+    package "admin" as FE_ADM
+    package "super-admin" as FE_SA
+  }
+  package "routes\n(AppRoutes, roleGuards)" as FE_ROUTES
+  package "components\n(ui, layout, forms, dashboard,\nhomework, quizzes, requests, …)" as FE_COMP
+  package "context\n(Auth, Tenant, Subscription)" as FE_CTX
+  package "hooks\n(useApi, useAuth, useTenant,\nuseFeature, usePaginatedList, …)" as FE_HOOKS
+  package "services\n(apiClient: axios + Bearer token)" as FE_API
+  package "utils" as FE_UTILS
+}
+
+package "backend/app  (Laravel 13 API)" as BE <<Frame>> {
+  package "Http" as BE_HTTP {
+    package "Controllers" as BE_CTRL {
+      package "Auth & Onboarding" as C_AUTH
+      package "Student" as C_STU
+      package "Teacher" as C_TEA
+      package "Admin" as C_ADM
+      package "SuperAdmin" as C_SA
+      package "Public\n(verify, plans, school page)" as C_PUB
+    }
+    package "Middleware\n(IdentifyTenant, EnsureRoleIs,\nEnforceSubscription, EnsureFeature,\nCheckTeachingAssignment, EnsureClassAccess,\nEnsurePasswordIsRotated)" as BE_MW
+    package "Requests\n(FormRequest validation)" as BE_REQ
+  }
+  package "Services" as BE_SVC {
+    package "Domain services\n(Auth, Grade, Attendance, Homework,\nRequest, Document, Onboarding,\nBilling, Subscription, Notification, …)" as S_DOMAIN
+    package "Payments\n(PaymentGateway, Mock,\nMtnMobileMoney, OrangeMoney, Card)" as S_PAY
+    package "Sms" as S_SMS
+    package "Ai\n(announcement drafter,\ncomment writer, tutor)" as S_AI
+    package "Pdf\n(PdfRenderer, ReportCardPresenter)" as S_PDF
+  }
+  package "Models\n(37 Eloquent models,\nConcerns\\BelongsToSchool)" as BE_MODELS
+  package "Contracts\n(HasAttachments, AnnouncementDrafter,\nCommentWriter, ImportHeaderMapper)" as BE_CONTRACTS
+  package "Policies" as BE_POL
+  package "Notifications\n(bell + mail + SMS channels)" as BE_NOTIF
+  package "Jobs\n(GenerateClassReportCardsJob)" as BE_JOBS
+  package "Support\n(AtRiskSignal, TenantContext)" as BE_SUPPORT
+}
+
+package "Laravel framework & vendor" as VENDOR <<Frame>> {
+  package "laravel/sanctum" as V_SANCTUM
+  package "barryvdh/laravel-dompdf" as V_DOMPDF
+  package "Illuminate\n(Eloquent, Queue, Mail,\nNotifications, Validation)" as V_ILLUM
+}
+
+' ---------- frontend dependencies ----------
+FE_ROUTES ..> FE_PAGES : <<import>>
+FE_ROUTES ..> FE_CTX : <<access>>
+FE_PAGES ..> FE_COMP : <<import>>
+FE_PAGES ..> FE_HOOKS : <<import>>
+FE_COMP ..> FE_HOOKS : <<import>>
+FE_HOOKS ..> FE_CTX : <<import>>
+FE_HOOKS ..> FE_API : <<import>>
+FE_CTX ..> FE_API : <<import>>
+FE_COMP ..> FE_UTILS : <<access>>
+FE_API ..> BE_HTTP : <<use>>\nHTTPS · JSON (/api/*)
+
+' ---------- backend dependencies ----------
+BE_CTRL ..> BE_REQ : <<import>>
+BE_CTRL ..> BE_SVC : <<import>>
+BE_CTRL ..> BE_POL : <<access>>
+BE_MW ..> BE_SUPPORT : <<import>>
+BE_MW ..> BE_MODELS : <<access>>
+S_DOMAIN ..> BE_MODELS : <<import>>
+S_DOMAIN ..> BE_NOTIF : <<import>>
+S_DOMAIN ..> BE_JOBS : <<access>>
+S_DOMAIN ..> S_PAY : <<import>>
+S_DOMAIN ..> S_PDF : <<import>>
+S_DOMAIN ..> S_AI : <<import>>
+S_DOMAIN ..> BE_SUPPORT : <<import>>
+S_AI ..> BE_CONTRACTS : <<import>>
+BE_NOTIF ..> S_SMS : <<import>>
+BE_JOBS ..> S_DOMAIN : <<import>>
+BE_POL ..> BE_MODELS : <<import>>
+BE_MODELS ..> BE_CONTRACTS : <<import>>
+BE_MODELS ..> BE_SUPPORT : <<access>>\nTenantScope
+BE_MODELS ..> V_ILLUM : <<import>>
+C_AUTH ..> V_SANCTUM : <<import>>
+S_PDF ..> V_DOMPDF : <<import>>
+BE_NOTIF ..> V_ILLUM : <<import>>
+
+note bottom of FE
+  The SPA is built with Vite and served as static files;
+  it only talks to the backend through <b>services/apiClient</b>.
+end note
+note bottom of BE
+  Controllers stay thin: validation in <b>Requests</b>, business rules in <b>Services</b>,
+  authorisation in <b>Policies</b>/middleware, persistence in <b>Models</b>.
+end note
+@enduml

@@ -1,0 +1,37 @@
+@startuml 31-state-subscription
+!pragma layout smetana
+!include _style.iuml
+title State Machine Diagram — School subscription lifecycle (subscriptions.status ↔ schools.status)
+
+[*] --> Trial : OnboardingService::register()\n/ startTrial: end_date = today + 14 days,\nschool.status = trial
+
+state Trial : entry / school may use every feature of the chosen plan
+state Active : entry / school.status = active\ndo / EnforceSubscription lets academic routes through
+state Expired : entry / school.status = expired\ndo / EnforceSubscription answers 403 subscription_required\n(billing, settings, audit log still reachable)
+state Suspended : entry / school.status = suspended\ndo / login refused (403) for every user of the school
+state Cancelled
+
+Trial --> Active : payment succeeded\n(BillingService::upgrade → SubscriptionService::subscribe)\n/ new Subscription row, receipt e-mailed
+Trial --> Expired : end_date passed\n[checked lazily by current() or by synapse:sweep-subscriptions]\n/ dunning notice
+Active --> Active : renew / upgrade [payment succeeded]\n/ new row: start = previous end (if future) else today,\nend = start + 1 month
+Active --> Expired : end_date passed [sweep command]\n/ SubscriptionReminderNotification (expired)
+Expired --> Active : renew or upgrade [payment succeeded]
+Active --> Suspended : super admin setStatus(suspended)
+Trial --> Suspended : super admin setStatus(suspended)
+Suspended --> Active : super admin re-activates
+Active --> Cancelled : super admin setStatus(cancelled)
+Suspended --> Cancelled : super admin setStatus(cancelled)
+Cancelled --> [*]
+
+note right of Expired
+  synapse:sweep-subscriptions (scheduled daily) sends reminders
+  7, 3 and 1 day(s) before end_date (trial and paid plans),
+  then one "expired" notice on the day it lapses.
+  Payment status itself is a separate small machine:
+  pending → succeeded | failed (→ refunded).
+end note
+note bottom of Cancelled
+  <i>past_due</i> exists as a Subscription constant but no code
+  path produces it today (reserved for card-recurring billing).
+end note
+@enduml

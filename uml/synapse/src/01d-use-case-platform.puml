@@ -1,0 +1,84 @@
+@startuml 01d-use-case-platform
+!pragma layout smetana
+!include _style.iuml
+left to right direction
+skinparam usecaseFontSize 11
+skinparam linetype polyline
+
+title SYNAPSE — Use Case Diagram: Public site, onboarding & platform administration
+
+actor "Guest" as guest
+actor "Super\nAdministrator" as superadmin
+actor "Scheduler\n(cron)" as cron <<system>>
+
+rectangle "SYNAPSE — public endpoints & super-admin console (/super-admin/*)" as SYS {
+  usecase "View landing page" as UC_land
+  usecase "View school\nlogin page (/school/{slug})" as UC_school
+  usecase "Register school\n(onboarding)" as UC_onboard
+  usecase "Choose subscription plan" as UC_plan
+  usecase "Create administrator\naccount" as UC_admin
+  usecase "Start free trial\n(14 days)" as UC_trial
+  usecase "Verify document\nauthenticity (/verify/{code})" as UC_verify
+  usecase "Reset forgotten password" as UC_reset
+  usecase "Authenticate" as UC_auth
+
+  usecase "View platform dashboard\n(counts, MRR, recent activity)" as UC_dash
+  usecase "Manage schools\n(create, update)" as UC_schools
+  usecase "Suspend / activate school" as UC_suspend
+  usecase "View a school's users" as UC_users
+  usecase "Manage subscription plans\n(price, limits, features)" as UC_plans
+  usecase "View subscriptions" as UC_subs
+  usecase "View payments\n& receipts" as UC_pay
+  usecase "View platform audit log" as UC_audit
+
+  usecase "Sweep subscriptions\n(expire, remind)" as UC_sweep
+  usecase "Prune old notifications" as UC_prune
+  usecase "Deliver notification\n(bell, e-mail, SMS)" as UC_notify
+}
+
+actor "Mail server\n(SMTP)" as smtp <<external>>
+actor "SMS gateway" as sms <<external>>
+
+guest -- UC_land
+guest -- UC_school
+guest -- UC_onboard
+guest -- UC_verify
+guest -- UC_reset
+guest -- UC_auth
+
+superadmin -- UC_auth
+superadmin -- UC_dash
+superadmin -- UC_schools
+superadmin -- UC_suspend
+superadmin -- UC_users
+superadmin -- UC_plans
+superadmin -- UC_subs
+superadmin -- UC_pay
+superadmin -- UC_audit
+
+cron -- UC_sweep
+cron -- UC_prune
+
+UC_onboard ..> UC_plan : <<include>>
+UC_onboard ..> UC_admin : <<include>>
+UC_onboard ..> UC_trial : <<include>>
+UC_reset ..> UC_notify : <<include>>
+UC_sweep ..> UC_notify : <<include>>
+
+UC_dash ..> UC_auth : <<include>>
+UC_schools ..> UC_auth : <<include>>
+UC_suspend ..> UC_auth : <<include>>
+UC_users ..> UC_auth : <<include>>
+UC_plans ..> UC_auth : <<include>>
+UC_subs ..> UC_auth : <<include>>
+UC_pay ..> UC_auth : <<include>>
+UC_audit ..> UC_auth : <<include>>
+
+UC_notify -- smtp
+UC_notify -- sms
+
+note bottom of SYS
+  The super administrator has no school: <b>IdentifyTenant</b> sets an empty tenant context and the
+  console queries cross every school explicitly. Scheduled work lives in routes/console.php.
+end note
+@enduml

@@ -1,0 +1,127 @@
+@startuml 01c-use-case-admin
+!pragma layout smetana
+!include _style.iuml
+left to right direction
+skinparam usecaseFontSize 11
+skinparam linetype polyline
+
+title SYNAPSE — Use Case Diagram: School administration console
+
+actor "School\nAdministrator" as admin
+
+rectangle "SYNAPSE — Administration console  (/admin/*  ·  role:admin)" as SYS {
+  usecase "Authenticate" as UC_auth
+  usecase "View dashboard" as UC_dash
+  usecase "Manage academic years\n& semesters" as UC_years
+  usecase "Manage classes\n& subjects" as UC_classes
+  usecase "Manage grade\ncomponents (weights)" as UC_comp
+  usecase "Manage teachers" as UC_teachers
+  usecase "Manage students\n& enrolments" as UC_students
+  usecase "Import users from CSV" as UC_import
+  usecase "Preview import\n(dry run, column mapping)" as UC_preview
+  usecase "Send temporary\ncredentials" as UC_creds
+  usecase "Assign teachers to\nclasses & subjects" as UC_assign
+  usecase "Manage timetable" as UC_tt
+  usecase "Detect timetable clash" as UC_clash
+  usecase "Manage exams" as UC_exams
+  usecase "Record attendance" as UC_att
+  usecase "Triage document\nrequests" as UC_triage
+  usecase "Update request status" as UC_status
+  usecase "Generate document PDF" as UC_gen
+  usecase "Generate report card\n/ transcript for a student" as UC_rc
+  usecase "Generate report cards\nfor a whole class (queued)" as UC_bulk
+  usecase "Publish announcement" as UC_ann
+  usecase "Draft announcement\nwith AI (FR/EN)" as UC_ai
+  usecase "Manage school events" as UC_events
+  usecase "View analytics &\nat-risk register" as UC_ana
+  usecase "View audit log" as UC_audit
+  usecase "View billing & usage" as UC_billing
+  usecase "Upgrade / renew plan" as UC_upgrade
+  usecase "Pay subscription" as UC_pay
+  usecase "Download receipt (PDF)" as UC_receipt
+  usecase "Manage settings\n& branding" as UC_settings
+  usecase "Deliver notification\n(bell, e-mail, SMS)" as UC_notify
+}
+
+actor "Mail server\n(SMTP)" as smtp <<external>>
+actor "SMS gateway" as sms <<external>>
+actor "Payment gateway\n(MTN MoMo / Orange Money / Card)" as paygw <<external>>
+actor "AI provider\n(OpenAI-compatible API)" as ai <<external>>
+
+admin -- UC_auth
+admin -- UC_dash
+admin -- UC_years
+admin -- UC_classes
+admin -- UC_comp
+admin -- UC_teachers
+admin -- UC_students
+admin -- UC_import
+admin -- UC_assign
+admin -- UC_tt
+admin -- UC_exams
+admin -- UC_att
+admin -- UC_triage
+admin -- UC_status
+admin -- UC_gen
+admin -- UC_rc
+admin -- UC_bulk
+admin -- UC_ann
+admin -- UC_events
+admin -- UC_ana
+admin -- UC_audit
+admin -- UC_billing
+admin -- UC_upgrade
+admin -- UC_receipt
+admin -- UC_settings
+
+UC_dash ..> UC_auth : <<include>>
+UC_years ..> UC_auth : <<include>>
+UC_classes ..> UC_auth : <<include>>
+UC_comp ..> UC_auth : <<include>>
+UC_teachers ..> UC_auth : <<include>>
+UC_students ..> UC_auth : <<include>>
+UC_import ..> UC_auth : <<include>>
+UC_assign ..> UC_auth : <<include>>
+UC_tt ..> UC_auth : <<include>>
+UC_exams ..> UC_auth : <<include>>
+UC_att ..> UC_auth : <<include>>
+UC_triage ..> UC_auth : <<include>>
+UC_status ..> UC_auth : <<include>>
+UC_gen ..> UC_auth : <<include>>
+UC_rc ..> UC_auth : <<include>>
+UC_bulk ..> UC_auth : <<include>>
+UC_ann ..> UC_auth : <<include>>
+UC_events ..> UC_auth : <<include>>
+UC_ana ..> UC_auth : <<include>>
+UC_audit ..> UC_auth : <<include>>
+UC_billing ..> UC_auth : <<include>>
+UC_upgrade ..> UC_auth : <<include>>
+UC_receipt ..> UC_auth : <<include>>
+UC_settings ..> UC_auth : <<include>>
+
+UC_import ..> UC_preview : <<include>>
+UC_import ..> UC_creds : <<include>>
+UC_teachers ..> UC_creds : <<include>>
+UC_students ..> UC_creds : <<include>>
+UC_tt ..> UC_clash : <<include>>
+UC_gen .> UC_status : <<extend>>
+UC_ai .> UC_ann : <<extend>>
+UC_upgrade ..> UC_pay : <<include>>
+UC_creds ..> UC_notify : <<include>>
+UC_status ..> UC_notify : <<include>>
+UC_gen ..> UC_notify : <<include>>
+UC_bulk ..> UC_notify : <<include>>
+UC_ann ..> UC_notify : <<include>>
+UC_events ..> UC_notify : <<include>>
+UC_pay ..> UC_notify : <<include>>
+
+UC_notify -- smtp
+UC_notify -- sms
+UC_pay -- paygw
+UC_ai -- ai
+
+note bottom of SYS
+  Dashboard, billing, settings, receipts and audit log stay reachable when the subscription has
+  expired (so the school can renew); every academic use case sits behind the <b>subscription</b> middleware.
+end note
+@enduml
